@@ -23,7 +23,7 @@ def scrape_united(query):
         payload = {
             "requests": [{
                 "indexName": "unitedpharmacy_livear_products",
-                "params": f"query={urllib.parse.quote(query)}&hitsPerPage=20"
+                "params": f"query={urllib.parse.quote(query)}&hitsPerPage=50"
             }]
         }
         res = requests.post(url, headers=headers, json=payload, timeout=10)
@@ -110,7 +110,7 @@ def scrape_nahdi(query):
                 if not results_list:
                     continue
                 hits = results_list[0].get('hits', [])
-                for h in hits[:20]:
+                for h in hits[:50]:
                     name = h.get('name', '')
                     price_val = h.get('price', {})
                     if isinstance(price_val, dict):
@@ -165,7 +165,7 @@ def scrape_aldawaa(query):
         url = 'https://stgprevapi.al-dawaa.com/occ/v2/aldawaa/products/search'
         params = {
             'query': query,
-            'pageSize': 20,
+            'pageSize': 50,
             'lang': 'ar',
             'curr': 'SAR'
         }
@@ -321,10 +321,42 @@ def search():
 # ── Best Deals / Featured Endpoint ────────────────────────────────────────────
 
 POPULAR_QUERIES = [
-    'Panadol', 'فيفادول', 'سولبادين', 'جافيسكون', 'كلاريتين',
-    'بروفين', 'فولتارين', 'ادفيل', 'سيتال', 'كونجستيل',
-    'اوكسي', 'نوروفين', 'بنادول نايت', 'دولوبران',
-    'موف', 'سعر خاص', 'عرض', 'تخفيضات'
+    # مسكنات وخافضات حرارة
+    'Panadol', 'بنادول', 'فيفادول', 'ادفيل', 'بروفين',
+    'نوروفين', 'سولبادين', 'دولوبران', 'البرازولام',
+    'بنادول نايت', 'بنادول اكسترا', 'الريلين',
+    'كيتولاك', 'ديكلوفيناك', 'naproxen',
+    # مضادات حيوية
+    'اموكسيسيلين', 'اوجمنتين', 'ازيثرومايسين',
+    'سيفالكسين', 'كلاريثروميسين', 'ميترونيدازول',
+    # حساسية
+    'كلاريتين', 'سيتريزين', 'لوراتادين', 'فيكسوفينادين',
+    'زيرتيك', 'زاديتن', 'تيليفاست',
+    # جهاز هضمي
+    'جافيسكون', 'اوميبرازول', 'بانتوبرازول', 'اسوميبرازول',
+    'موتيليوم', 'ميتوكلوبراميد', 'لانسوبرازول',
+    # فيتامينات ومكملات
+    'فيتامين د', 'فيتامين سي', 'فيتامين ب12', 'اوميغا 3',
+    'سنتروم', 'سوبرادين', 'بيوكال', 'كالسيوم', 'حديد',
+    'مغنيسيوم', 'زنك', 'فيتامين e',
+    # برد وانفلونزا
+    'كونجستيل', 'داي', 'فلوتاب', 'بانادول كولد',
+    'ستوب كوف', 'بروسبان', 'توسيفان',
+    # جهاز تنفسي
+    'فينتولين', 'سيريتايد', 'بلميكورت', 'اوكسيس',
+    'سنقولاير', 'مونتيلوكاست',
+    # جلدية
+    'كلوتريمازول', 'ميكونازول', 'فيوسيدين', 'بيتاديرم',
+    'اكرتين', 'ادابالين',
+    # سكري
+    'ميتفورمين', 'جلوكوفاج', 'دياميكرون', 'جمبيدي',
+    'لانتوس', 'نوفورابيد',
+    # ضغط وقلب
+    'املوديبين', 'ليسينوبريل', 'اتورفاستاتين',
+    'كارديوبايرين', 'اسبرين', 'ميتوبرولول',
+    # عروض خاصة
+    'عرض', 'تخفيضات', 'خصم', 'sale',
+    'best price', 'offer',
 ]
 _deals_cache = None
 _deals_cache_time = 0
@@ -352,11 +384,11 @@ def deals():
                 continue
         return items
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
         futures = {ex.submit(run_popular, q): q for q in POPULAR_QUERIES}
-        for f in concurrent.futures.as_completed(futures, timeout=45):
+        for f in concurrent.futures.as_completed(futures, timeout=90):
             try:
-                items = f.result(timeout=40)
+                items = f.result(timeout=80)
                 for item in items:
                     if item['link'] not in seen_links:
                         seen_links.add(item['link'])
@@ -388,14 +420,12 @@ def deals():
     # Sort regular: cheapest first
     regular_items.sort(key=lambda x: x['price'])
 
-    # Final list: all offers + top cheap regular items (marked)
-    deals_list = offer_items[:48]
-    # Add up to 24 cheap regular items if we have room
-    if len(deals_list) < 24:
-        for ri in regular_items:
-            if len(deals_list) >= 48:
-                break
-            deals_list.append(ri)
+    # Final list: all offers + regular items
+    deals_list = offer_items[:100]
+    for ri in regular_items:
+        if len(deals_list) >= 200:
+            break
+        deals_list.append(ri)
 
     _deals_cache = deals_list
     _deals_cache_time = time.time()

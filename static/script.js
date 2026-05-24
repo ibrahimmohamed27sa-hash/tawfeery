@@ -59,6 +59,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const dealsSection  = document.getElementById('deals-section');
     const dealsGrid     = document.getElementById('deals-grid');
     const dealsLoading  = document.getElementById('deals-loading');
+    const dealsCountBadge = document.getElementById('deals-count-badge');
+    let dealsData       = [];
+    let dealsShowCount  = 48;
 
     // Initialize UI
     renderHistory();
@@ -71,17 +74,37 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const res = await fetch('/api/deals');
             if (!res.ok) { dealsLoading.textContent = ''; return; }
-            const items = await res.json();
+            dealsData = await res.json();
             dealsLoading.style.display = 'none';
-            if (!items || items.length === 0) return;
-
-            dealsGrid.innerHTML = '';
-            items.slice(0, 48).forEach((item, idx) => {
-                const card = buildDealCard(item, idx);
-                dealsGrid.appendChild(card);
-            });
+            if (!dealsData || dealsData.length === 0) return;
+            renderDealsChunk();
         } catch (e) {
             dealsLoading.textContent = '';
+        }
+    }
+
+    function renderDealsChunk() {
+        const toShow = dealsData.slice(0, dealsShowCount);
+        dealsGrid.innerHTML = '';
+        toShow.forEach((item, idx) => {
+            const card = buildDealCard(item, idx);
+            dealsGrid.appendChild(card);
+        });
+        if (dealsCountBadge) dealsCountBadge.textContent = `${dealsData.length}+ منتج`;
+
+        // Remove old load-more if exists
+        const oldBtn = document.querySelector('.deals-load-more');
+        if (oldBtn) oldBtn.remove();
+
+        if (dealsShowCount < dealsData.length) {
+            const btn = document.createElement('button');
+            btn.className = 'deals-load-more';
+            btn.textContent = `عرض المزيد (${dealsData.length - dealsShowCount}+)`;
+            btn.addEventListener('click', () => {
+                dealsShowCount += 48;
+                renderDealsChunk();
+            });
+            dealsGrid.after(btn);
         }
     }
 

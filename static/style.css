@@ -403,6 +403,35 @@ body {
     transition: var(--transition-smooth);
 }
 
+.deals-count-badge {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    background: rgba(255,255,255,0.04);
+    padding: 0.2rem 0.8rem;
+    border-radius: 20px;
+    border: 1px solid var(--border-color);
+}
+
+.deals-load-more {
+    display: block;
+    margin: 2rem auto 0;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--border-color);
+    color: var(--text-main);
+    padding: 0.7rem 2rem;
+    border-radius: 50px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition-smooth);
+    font-family: inherit;
+}
+.deals-load-more:hover {
+    background: rgba(16,185,129,0.1);
+    border-color: var(--primary-color);
+    color: var(--primary-hover);
+}
+
 .deal-buy-btn:hover {
     transform: translateY(-1px);
     box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
