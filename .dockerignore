@@ -1,6 +1,4 @@
 __pycache__/
-*.py[cod]
-*$py.class
 .git/
 .vscode/
 .idea/
@@ -9,14 +7,3 @@ __pycache__/
 venv/
 .venv/
 env/
-.env
-CVS
-.svn
-.hg
-.gitattributes
-.gitignore
-Dockerfile
-.dockerignore
-implementation_plan.md
-task.md
-walkthrough.md
