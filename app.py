@@ -318,6 +318,68 @@ def search():
     )
 
 
+# ── Best Deals / Featured Endpoint ────────────────────────────────────────────
+
+POPULAR_QUERIES = ['Panadol', 'فيفادول', 'سولبادين', 'جافيسكون', 'كلاريتين', 'بروفين', 'فولتارين', 'ادفيل']
+_deals_cache = None
+_deals_cache_time = 0
+
+@app.route('/api/deals')
+def deals():
+    """Returns a curated list of best deals across all pharmacies."""
+    import time
+    global _deals_cache, _deals_cache_time
+
+    now = time.time()
+    if _deals_cache and (now - _deals_cache_time) < 300:  # 5 min cache
+        return Response(json.dumps(_deals_cache, ensure_ascii=False), mimetype='application/json')
+
+    all_items = []
+    seen_links = set()
+
+    def run_popular(query):
+        items = []
+        for scraper_fn in (scrape_united, scrape_nahdi, scrape_aldawaa):
+            try:
+                results = scraper_fn(query)
+                items.extend(results)
+            except Exception:
+                continue
+        return items
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
+        futures = {ex.submit(run_popular, q): q for q in POPULAR_QUERIES}
+        for f in concurrent.futures.as_completed(futures, timeout=45):
+            try:
+                items = f.result(timeout=40)
+                for item in items:
+                    if item['link'] not in seen_links:
+                        seen_links.add(item['link'])
+                        all_items.append(item)
+            except Exception:
+                continue
+
+    # Deduplicate by name similarity (keep cheapest per unique product)
+    from collections import OrderedDict
+    best_map = {}
+    for item in all_items:
+        key = item['name'].split(' ')[0].lower().replace('ـ', '')  # first token as key
+        if key not in best_map or item['price'] < best_map[key]['price']:
+            best_map[key] = item
+
+    # Sort: items with offers first, then by price ascending
+    def sort_key(item):
+        has_offer = 1 if item.get('offer') else 0
+        return (has_offer, item['price'])
+
+    deals_list = sorted(best_map.values(), key=sort_key)[:24]
+
+    _deals_cache = deals_list
+    _deals_cache_time = time.time()
+
+    return Response(json.dumps(deals_list, ensure_ascii=False), mimetype='application/json')
+
+
 if __name__ == '__main__':
     import os
     port = int(os.environ.get('PORT', 5050))

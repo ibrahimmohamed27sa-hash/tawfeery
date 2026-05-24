@@ -55,9 +55,67 @@ document.addEventListener('DOMContentLoaded', () => {
     let customEquivalents = JSON.parse(localStorage.getItem('tawfeery_custom_equivalents')) || {};
     let currentQuery  = '';
 
+    // Deals Section DOM
+    const dealsSection  = document.getElementById('deals-section');
+    const dealsGrid     = document.getElementById('deals-grid');
+    const dealsLoading  = document.getElementById('deals-loading');
+
     // Initialize UI
     renderHistory();
     updateBasketUI();
+    fetchDeals();
+
+    // ── BEST DEALS LOGIC ─────────────────────────────────────────────────────
+
+    async function fetchDeals() {
+        try {
+            const res = await fetch('/api/deals');
+            if (!res.ok) { dealsLoading.textContent = ''; return; }
+            const items = await res.json();
+            dealsLoading.style.display = 'none';
+            if (!items || items.length === 0) return;
+
+            dealsGrid.innerHTML = '';
+            items.slice(0, 12).forEach((item, idx) => {
+                const card = buildDealCard(item, idx);
+                dealsGrid.appendChild(card);
+            });
+        } catch (e) {
+            dealsLoading.textContent = '';
+        }
+    }
+
+    function buildDealCard(item, idx) {
+        const div = document.createElement('div');
+        div.className = 'deal-card';
+        div.style.animationDelay = `${idx * 0.06}s`;
+
+        const img = item.image
+            ? `<img src="${item.image}" alt="${item.name}" class="deal-img" onerror="this.style.display='none';this.parentElement.style.background='var(--bg-secondary)'">`
+            : '<div class="deal-img-placeholder">💊</div>';
+
+        const badgeClass = item.store.includes('Nahdi') ? 'store-nahdi'
+            : item.store.includes('Dawaa') ? 'store-dawaa'
+            : 'store-united';
+
+        const offerHtml = item.offer
+            ? `<div class="deal-offer-tag">🎁 ${item.offer}</div>`
+            : '';
+
+        div.innerHTML = `
+            <div class="deal-img-wrap">${img}</div>
+            <div class="deal-body">
+                <div class="deal-store-badge ${badgeClass}">${item.store}</div>
+                <div class="deal-name">${item.name}</div>
+                ${offerHtml}
+                <div class="deal-price-row">
+                    <span class="deal-price">${parseFloat(item.price).toFixed(2)} <span class="deal-currency">SAR</span></span>
+                    <a href="${item.link}" target="_blank" rel="noopener noreferrer" class="deal-buy-btn">عرض</a>
+                </div>
+            </div>
+        `;
+        return div;
+    }
 
     // ── SEARCH LOGIC ─────────────────────────────────────────────────────────
 
@@ -98,6 +156,7 @@ document.addEventListener('DOMContentLoaded', () => {
         resultsGrid.innerHTML = '';
         resultsCount.textContent = '0';
         errorState.classList.add('hidden');
+        dealsSection.style.display = 'none';
         resultsContainer.classList.remove('hidden');
         loadingState.classList.remove('hidden');
         if (loadingText) loadingText.textContent = 'جاري البحث في الصيدليات...';
@@ -145,6 +204,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                         if (allResults.length === 0) {
                             resultsContainer.classList.add('hidden');
+                            dealsSection.style.display = '';
                             errorState.innerHTML = '<div class="error-icon">🔍</div><p>لم يتم العثور على نتائج. جرب كلمة بحث أخرى.</p>';
                             errorState.classList.remove('hidden');
                         } else {
@@ -186,6 +246,7 @@ document.addEventListener('DOMContentLoaded', () => {
             loadingState.classList.add('hidden');
             resultsGrid.innerHTML = '';
             resultsContainer.classList.add('hidden');
+            dealsSection.style.display = '';
             errorState.innerHTML = `
                 <div class="error-icon">⚠️</div>
                 <p>عذراً، حدث خطأ أثناء الاتصال. يرجى المحاولة مرة أخرى.</p>
