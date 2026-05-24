@@ -6,8 +6,67 @@ import urllib.parse
 import concurrent.futures
 import json
 import re
+import math
 
 app = Flask(__name__)
+
+
+# ── Quantity Extraction & Unit Price Normalization ───────────────────────────
+
+def extract_quantity(name):
+    """Extract item count from a product name (e.g. 'عدد 30', '30 حبة', '30 Tablets')."""
+    if not name:
+        return None
+    text = name.replace('ـ', '').replace(',', '').strip()
+
+    # Patterns: عدد 30, quantity 30, 30's, 30+1
+    patterns = [
+        # Arabic: عدد 30
+        r'عدد\s*(\d+)',
+        # Arabic: 30 حبة, 30 حبّة, 30 قرص, 30 كبسولة, 30 كبسولة, 30 حفاض, 30 حفاضة, 30 قطعة
+        r'(\d+)\s*(حبة|حبّة|حبات|قرص|اقراص|كبسولة|كبسولات|حفاض|حفاضة|حفائض|قطعة|قطعه|قطع|شريط|شرائط|ملعقة|ملىء|حقنة|امبول|امبولات|لبوس|تحميلة)',
+        # English: 30 Tablets, 30 Capsules, 30 Pills, 30 Diapers, 30 Pieces, 30's
+        r'(\d+)\s*(Tablets?|Capsules?|Pills?|Diapers?|Pieces?|Count|Pack|Tabs?|Caps?|Pcs|ML|Mg|G|KG)',
+        # Pack of 30
+        r'(?:Pack|pack|عبوة|علبة)\s*(?:of|OF|)\s*(\d+)',
+        # 30+1, 30+1 Free
+        r'(\d+)\s*\+\s*\d+',
+        # 30x, 30 X (but NOT مقاس 3 / Size 3)
+        r'(\d+)\s*[xX×](?!\s*مقاس|\s*Size)',
+        # 30's, 30ct
+        r'(\d+)[\'\u2019]?[sS]\b',
+        r'(\d+)\s*[cC][tT]\b',
+    ]
+
+    # Skip if it's a size pattern (مقاس 3, Size 3, مقاس كبير, etc.)
+    if re.search(r'(مقاس|size|large|medium|small|كبير|وسط|صغير)', text, re.I):
+        # Still try to extract if there's a clear count AND size mention
+        pass
+
+    for pat in patterns:
+        m = re.search(pat, text, re.I)
+        if m:
+            val = int(m.group(1))
+            if 1 < val <= 500:  # Sanity check
+                return val
+    return None
+
+
+def compute_unit_price(price, quantity):
+    """Return unit price (price per item) if quantity is valid, else None."""
+    if quantity and quantity > 0:
+        return round(price / quantity, 4)
+    return None
+
+
+def enrich_item(item):
+    """Add quantity and unit_price fields to a scraper result."""
+    if 'quantity' not in item or not item['quantity']:
+        qty = extract_quantity(item.get('name', ''))
+        item['quantity'] = qty
+    if 'unit_price' not in item or not item['unit_price']:
+        item['unit_price'] = compute_unit_price(item['price'], item['quantity'])
+    return item
 
 
 # ── United Pharmacy via Algolia JSON API ──────────────────────────────────────
@@ -44,14 +103,16 @@ def scrape_united(query):
                         if h.get('isOfferApplicable'):
                             offer_text = h.get('offerApplicableLabel', '')
                         
-                        results.append({
+                        item = {
                             'store': 'United Pharmacy',
                             'name': name,
                             'price': float(price_val),
                             'image': img_url,
                             'link': link,
-                            'offer': offer_text
-                        })
+                            'offer': offer_text,
+                        }
+                        enrich_item(item)
+                        results.append(item)
                     except Exception:
                         pass
     except Exception as e:
@@ -126,8 +187,9 @@ def scrape_nahdi(query):
                     if name and price_val:
                         try:
                             offer_text = ''
-                            if h.get('item_has_offer') == 'Yes':
-                                promo = h.get('promo_type', '')
+                            # Detect offers from multiple fields
+                            if h.get('item_has_offer') == 'Yes' or h.get('isOfferApplicable') or h.get('promo_type'):
+                                promo = h.get('promo_type') or h.get('offer_text') or h.get('offerApplicableLabel', '')
                                 if promo:
                                     if "Buy 2  For" in promo:
                                         price = promo.replace("Buy 2  For", "").replace("SAR", "").strip()
@@ -141,14 +203,16 @@ def scrape_nahdi(query):
                                     else:
                                         offer_text = promo
 
-                            results.append({
+                            item = {
                                 'store': 'Nahdi Online',
                                 'name': name,
                                 'price': float(price_val),
                                 'image': img_url,
                                 'link': link,
-                                'offer': offer_text
-                            })
+                                'offer': offer_text,
+                            }
+                            enrich_item(item)
+                            results.append(item)
                         except Exception:
                             pass
             break  # Only process the first matching script
@@ -223,14 +287,30 @@ def scrape_aldawaa(query):
                 link = 'https://www.al-dawaa.com' + link
 
             try:
-                # Build offer text from promotions
+                # Build offer text from promotions (multiple sources)
                 promo_text = ''
                 potential = p.get('potentialPromotions', [])
                 if isinstance(potential, list) and len(potential) > 0:
                     promo_code = potential[0].get('code', '').strip()
-                    # Only show promo code if it's meaningful (not just "توصيل فقط" type)
                     if promo_code and 'توصيل' not in promo_code:
                         promo_text = promo_code
+
+                # Check other promotion fields
+                if not promo_text:
+                    desc = p.get('promotionalDescriptions') or p.get('productPromotions') or p.get('promotionDescription') or ''
+                    if isinstance(desc, list):
+                        desc = ' '.join(str(d) for d in desc)
+                    if isinstance(desc, str) and desc.strip():
+                        promo_text = desc.strip()[:100]
+
+                # Check volume pricing / bulk buy
+                volume = p.get('volumePrices', [])
+                if isinstance(volume, list) and len(volume) > 0 and not promo_text:
+                    vp = volume[0]
+                    vp_price = vp.get('price', {}).get('value') if isinstance(vp.get('price'), dict) else vp.get('value')
+                    vp_qty = vp.get('minimumQuantity', 2)
+                    if vp_price and vp_price < price_val:
+                        promo_text = f"سعر الكمية: اشتر {vp_qty}+ بسعر {vp_price:.2f} ريال للقطعة"
 
                 # Combine promo text + delivery discount info
                 if promo_text and delivery_discount_text:
@@ -242,14 +322,16 @@ def scrape_aldawaa(query):
                 else:
                     offer_text = ''
 
-                results.append({
+                item = {
                     'store': 'Al-Dawaa',
                     'name': name,
                     'price': float(price_val),
                     'image': img_url,
                     'link': link,
-                    'offer': offer_text
-                })
+                    'offer': offer_text,
+                }
+                enrich_item(item)
+                results.append(item)
             except Exception:
                 pass
     except Exception as e:
@@ -321,6 +403,9 @@ def search():
 # ── Best Deals / Featured Endpoint ────────────────────────────────────────────
 
 POPULAR_QUERIES = [
+    # حفاضات ومنتجات الأطفال
+    'حفاضات', 'بامبرز', 'pampers', 'diaper', 'baby wipes',
+    'حليب أطفال', 'نان', 'sadya', 'بيبي جوي',
     # مسكنات وخافضات حرارة
     'Panadol', 'بنادول', 'فيفادول', 'ادفيل', 'بروفين',
     'نوروفين', 'سولبادين', 'دولوبران', 'البرازولام',
@@ -396,34 +481,46 @@ def deals():
             except Exception:
                 continue
 
-    # Separate items with offers vs without
+    # Smart deduplication: key = brand + quantity (if available)
+    # so different pack sizes (30 vs 60 diapers) are treated separately
+    def item_key(item):
+        tokens = item['name'].split(' ')
+        brand = tokens[0].lower().replace('ـ', '') if tokens else ''
+        qty = item.get('quantity') or ''
+        return f"{brand}_{qty}"
+
+    # Items grouped by store + key for cross-pharmacy comparison
     offer_items = []
     regular_items = []
-    seen_offer_names = set()
-    seen_regular_names = set()
+    seen_offer = set()
+    seen_regular = set()
 
     for item in all_items:
-        key = item['name'].split(' ')[0].lower().replace('ـ', '')
+        key = item_key(item)
         has_offer = bool(item.get('offer'))
+        store = item.get('store', '')
+        store_key = f"{store}_{key}"
+
         if has_offer:
-            if key not in seen_offer_names:
-                seen_offer_names.add(key)
+            if store_key not in seen_offer:
+                seen_offer.add(store_key)
                 offer_items.append(item)
         else:
-            if key not in seen_regular_names:
-                seen_regular_names.add(key)
+            if store_key not in seen_regular:
+                seen_regular.add(store_key)
                 regular_items.append(item)
 
-    # Sort offers: best discount value first (price descending = bigger saving potential)
-    offer_items.sort(key=lambda x: x['price'], reverse=True)
+    # Sort offers: by unit_price ascending (best deal first), fallback to price
+    def sort_price(item):
+        return item.get('unit_price') or item['price']
 
-    # Sort regular: cheapest first
-    regular_items.sort(key=lambda x: x['price'])
+    offer_items.sort(key=sort_price)
+    regular_items.sort(key=sort_price)
 
-    # Final list: all offers + regular items
-    deals_list = offer_items[:100]
+    # Final list: all offers + regular items (max 300 total)
+    deals_list = offer_items[:200]
     for ri in regular_items:
-        if len(deals_list) >= 200:
+        if len(deals_list) >= 300:
             break
         deals_list.append(ri)
 

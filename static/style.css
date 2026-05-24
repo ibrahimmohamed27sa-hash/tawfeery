@@ -392,6 +392,12 @@ body {
     color: var(--text-muted);
 }
 
+.deal-unit-price {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    margin-top: 0.15rem;
+}
+
 .deal-buy-btn {
     background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
     color: white;

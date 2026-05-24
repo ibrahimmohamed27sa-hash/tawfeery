@@ -130,6 +130,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const badgeLabel = hasOffer ? '🔥 عرض' : '💊 منتج';
 
+        // Unit price display
+        let unitPriceHtml = '';
+        if (item.quantity && item.quantity > 0) {
+            const unitP = parseFloat(item.price) / item.quantity;
+            unitPriceHtml = `<div class="deal-unit-price">${unitP.toFixed(3)} SAR / الحبة</div>`;
+        }
+
         div.innerHTML = `
             <div class="deal-img-wrap">${img}</div>
             <div class="deal-body">
@@ -140,7 +147,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="deal-name">${item.name}</div>
                 ${offerHtml}
                 <div class="deal-price-row">
-                    <span class="deal-price">${parseFloat(item.price).toFixed(2)} <span class="deal-currency">SAR</span></span>
+                    <div>
+                        <span class="deal-price">${parseFloat(item.price).toFixed(2)} <span class="deal-currency">SAR</span></span>
+                        ${unitPriceHtml}
+                    </div>
                     <a href="${item.link}" target="_blank" rel="noopener noreferrer" class="deal-buy-btn">عرض</a>
                 </div>
             </div>
