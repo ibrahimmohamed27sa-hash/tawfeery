@@ -70,16 +70,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ── BEST DEALS LOGIC ─────────────────────────────────────────────────────
 
-    async function fetchDeals() {
-        try {
-            const res = await fetch('/api/deals');
-            if (!res.ok) { dealsLoading.textContent = ''; return; }
-            dealsData = await res.json();
-            dealsLoading.style.display = 'none';
-            if (!dealsData || dealsData.length === 0) return;
-            renderDealsChunk();
-        } catch (e) {
-            dealsLoading.textContent = '';
+    async function fetchDeals(retries = 3) {
+        for (let attempt = 0; attempt < retries; attempt++) {
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 25000);
+                const res = await fetch('/api/deals', { signal: controller.signal });
+                clearTimeout(timeoutId);
+                if (!res.ok) { dealsLoading.textContent = ''; return; }
+                dealsData = await res.json();
+                dealsLoading.style.display = 'none';
+                if (!dealsData || dealsData.length === 0) return;
+                renderDealsChunk();
+                return;
+            } catch (e) {
+                if (attempt < retries - 1) {
+                    dealsLoading.textContent = `جاري تحميل أفضل العروض... (محاولة ${attempt + 2})`;
+                    await new Promise(r => setTimeout(r, 3000));
+                } else {
+                    dealsLoading.textContent = '';
+                }
+            }
         }
     }
 
