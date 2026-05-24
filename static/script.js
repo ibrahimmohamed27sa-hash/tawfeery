@@ -70,7 +70,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ── BEST DEALS LOGIC ─────────────────────────────────────────────────────
 
-    async function fetchDeals(retries = 8) {
+    async function fetchDeals(retries = 30) {
         for (let attempt = 0; attempt < retries; attempt++) {
             try {
                 const controller = new AbortController();

@@ -441,9 +441,9 @@ def search():
 # ── Best Deals / Featured Endpoint ────────────────────────────────────────────
 
 POPULAR_QUERIES = [
-    'Panadol', 'بنادول', 'فيفادول', 'ادفيل', 'بروفين', 'نوروفين',
-    'سولبادين', 'كلاريتين', 'جافيسكون', 'حفاضات', 'بامبرز',
-    'فيتامين د', 'سنتروم', 'اوميغا 3', 'عرض', 'تخفيضات', 'خصم',
+    'Panadol', 'فيفادول', 'بروفين', 'سولبادين',
+    'كلاريتين', 'جافيسكون', 'حفاضات', 'سنتروم',
+    'اوميغا 3', 'عرض'
 ]
 _deals_cache = None
 _deals_cache_time = 0
@@ -472,11 +472,10 @@ def deals():
 
 
 def _refresh_deals():
-    """Background refresh of deals cache."""
+    """Background refresh of deals cache — populates incrementally."""
     global _deals_cache, _deals_cache_time, _deals_refreshing
     import time
     try:
-        all_items = []
         seen_links = set()
 
         def run_popular(query):
@@ -490,58 +489,51 @@ def _refresh_deals():
                     continue
             return items
 
+        def rebuild_cache(all_items):
+            """Re-deduplicate and sort the full list into a cache snapshot."""
+            def item_key(item):
+                tokens = item['name'].split(' ')
+                brand = tokens[0].lower().replace('ـ', '') if tokens else ''
+                qty = item.get('quantity') or ''
+                return f"{brand}_{qty}"
+            offer_items, regular_items = [], []
+            seen_offer, seen_regular = set(), set()
+            for item in all_items:
+                key = item_key(item)
+                store_key = f"{item.get('store','')}_{key}"
+                if item.get('offer'):
+                    if store_key not in seen_offer:
+                        seen_offer.add(store_key)
+                        offer_items.append(item)
+                else:
+                    if store_key not in seen_regular:
+                        seen_regular.add(store_key)
+                        regular_items.append(item)
+            offer_items.sort(key=lambda i: i.get('unit_price') or i['price'])
+            regular_items.sort(key=lambda i: i.get('unit_price') or i['price'])
+            deals = offer_items[:200]
+            for ri in regular_items:
+                if len(deals) >= 300:
+                    break
+                deals.append(ri)
+            return deals
+
+        all_items = []
         with concurrent.futures.ThreadPoolExecutor(max_workers=6) as ex:
             futures = {ex.submit(run_popular, q): q for q in POPULAR_QUERIES}
-            for f in concurrent.futures.as_completed(futures, timeout=35):
+            for f in concurrent.futures.as_completed(futures):
                 try:
-                    items = f.result(timeout=30)
+                    items = f.result()
                     for item in items:
                         if item['link'] not in seen_links:
                             seen_links.add(item['link'])
                             all_items.append(item)
+                    # Incrementally update cache so frontend gets data sooner
+                    _deals_cache = rebuild_cache(all_items)
+                    _deals_cache_time = time.time()
                 except Exception:
                     continue
 
-        # Smart deduplication: key = brand + quantity
-        def item_key(item):
-            tokens = item['name'].split(' ')
-            brand = tokens[0].lower().replace('ـ', '') if tokens else ''
-            qty = item.get('quantity') or ''
-            return f"{brand}_{qty}"
-
-        offer_items = []
-        regular_items = []
-        seen_offer = set()
-        seen_regular = set()
-
-        for item in all_items:
-            key = item_key(item)
-            has_offer = bool(item.get('offer'))
-            store = item.get('store', '')
-            store_key = f"{store}_{key}"
-            if has_offer:
-                if store_key not in seen_offer:
-                    seen_offer.add(store_key)
-                    offer_items.append(item)
-            else:
-                if store_key not in seen_regular:
-                    seen_regular.add(store_key)
-                    regular_items.append(item)
-
-        def sort_price(item):
-            return item.get('unit_price') or item['price']
-
-        offer_items.sort(key=sort_price)
-        regular_items.sort(key=sort_price)
-
-        deals_list = offer_items[:200]
-        for ri in regular_items:
-            if len(deals_list) >= 300:
-                break
-            deals_list.append(ri)
-
-        _deals_cache = deals_list
-        _deals_cache_time = time.time()
     except Exception as e:
         print(f"Deals refresh error: {e}")
     finally:
