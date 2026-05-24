@@ -441,45 +441,15 @@ def search():
 # ── Best Deals / Featured Endpoint ────────────────────────────────────────────
 
 POPULAR_QUERIES = [
-    # حفاضات ومنتجات الأطفال
-    'حفاضات', 'بامبرز', 'pampers', 'diaper', 'baby wipes',
-    'حليب أطفال', 'نان', 'sadya', 'بيبي جوي',
-    # مسكنات وخافضات حرارة
-    'Panadol', 'بنادول', 'فيفادول', 'ادفيل', 'بروفين',
-    'نوروفين', 'سولبادين', 'دولوبران', 'البرازولام',
-    'بنادول نايت', 'بنادول اكسترا', 'الريلين',
-    'كيتولاك', 'ديكلوفيناك', 'naproxen',
-    # مضادات حيوية
-    'اموكسيسيلين', 'اوجمنتين', 'ازيثرومايسين',
-    'سيفالكسين', 'كلاريثروميسين', 'ميترونيدازول',
-    # حساسية
-    'كلاريتين', 'سيتريزين', 'لوراتادين', 'فيكسوفينادين',
-    'زيرتيك', 'زاديتن', 'تيليفاست',
-    # جهاز هضمي
-    'جافيسكون', 'اوميبرازول', 'بانتوبرازول', 'اسوميبرازول',
-    'موتيليوم', 'ميتوكلوبراميد', 'لانسوبرازول',
-    # فيتامينات ومكملات
-    'فيتامين د', 'فيتامين سي', 'فيتامين ب12', 'اوميغا 3',
-    'سنتروم', 'سوبرادين', 'بيوكال', 'كالسيوم', 'حديد',
-    'مغنيسيوم', 'زنك', 'فيتامين e',
-    # برد وانفلونزا
-    'كونجستيل', 'داي', 'فلوتاب', 'بانادول كولد',
-    'ستوب كوف', 'بروسبان', 'توسيفان',
-    # جهاز تنفسي
-    'فينتولين', 'سيريتايد', 'بلميكورت', 'اوكسيس',
-    'سنقولاير', 'مونتيلوكاست',
-    # جلدية
-    'كلوتريمازول', 'ميكونازول', 'فيوسيدين', 'بيتاديرم',
-    'اكرتين', 'ادابالين',
-    # سكري
-    'ميتفورمين', 'جلوكوفاج', 'دياميكرون', 'جمبيدي',
-    'لانتوس', 'نوفورابيد',
-    # ضغط وقلب
-    'املوديبين', 'ليسينوبريل', 'اتورفاستاتين',
-    'كارديوبايرين', 'اسبرين', 'ميتوبرولول',
-    # عروض خاصة
-    'عرض', 'تخفيضات', 'خصم', 'sale',
-    'best price', 'offer',
+    'Panadol', 'بنادول', 'فيفادول', 'ادفيل', 'بروفين', 'نوروفين',
+    'سولبادين', 'كلاريتين', 'جافيسكون', 'اوميبرازول',
+    'فيتامين د', 'فيتامين سي', 'سنتروم', 'اوميغا 3',
+    'كونجستيل', 'بانادول كولد',
+    'حفاضات', 'بامبرز', 'pampers',
+    'عرض', 'تخفيضات', 'خصم',
+    'اموكسيسيلين', 'اوجمنتين',
+    'ميتفورمين', 'املوديبين', 'اسبرين',
+    'فينتولين', 'كلوتريمازول',
 ]
 _deals_cache = None
 _deals_cache_time = 0
@@ -491,7 +461,7 @@ def deals():
     global _deals_cache, _deals_cache_time
 
     now = time.time()
-    if _deals_cache and (now - _deals_cache_time) < 300:  # 5 min cache
+    if _deals_cache and (now - _deals_cache_time) < 900:  # 15 min cache (5 min fresh + 10 min stale fallback)
         return Response(json.dumps(_deals_cache, ensure_ascii=False), mimetype='application/json')
 
     all_items = []
@@ -502,16 +472,17 @@ def deals():
         for scraper_fn in (scrape_united, scrape_nahdi, scrape_aldawaa):
             try:
                 results = scraper_fn(query)
-                items.extend(results)
+                if results:
+                    items.extend(results)
             except Exception:
                 continue
         return items
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as ex:
         futures = {ex.submit(run_popular, q): q for q in POPULAR_QUERIES}
-        for f in concurrent.futures.as_completed(futures, timeout=90):
+        for f in concurrent.futures.as_completed(futures, timeout=40):
             try:
-                items = f.result(timeout=80)
+                items = f.result(timeout=35)
                 for item in items:
                     if item['link'] not in seen_links:
                         seen_links.add(item['link'])
