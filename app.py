@@ -496,27 +496,16 @@ def _refresh_deals():
                 brand = tokens[0].lower().replace('ـ', '') if tokens else ''
                 qty = item.get('quantity') or ''
                 return f"{brand}_{qty}"
-            offer_items, regular_items = [], []
-            seen_offer, seen_regular = set(), set()
+            offer_items = []
+            seen_keys = set()
             for item in all_items:
                 key = item_key(item)
                 store_key = f"{item.get('store','')}_{key}"
-                if item.get('offer'):
-                    if store_key not in seen_offer:
-                        seen_offer.add(store_key)
-                        offer_items.append(item)
-                else:
-                    if store_key not in seen_regular:
-                        seen_regular.add(store_key)
-                        regular_items.append(item)
+                if item.get('offer') and store_key not in seen_keys:
+                    seen_keys.add(store_key)
+                    offer_items.append(item)
             offer_items.sort(key=lambda i: i.get('unit_price') or i['price'])
-            regular_items.sort(key=lambda i: i.get('unit_price') or i['price'])
-            deals = offer_items[:200]
-            for ri in regular_items:
-                if len(deals) >= 300:
-                    break
-                deals.append(ri)
-            return deals
+            return offer_items[:300]
 
         all_items = []
         with concurrent.futures.ThreadPoolExecutor(max_workers=6) as ex:
