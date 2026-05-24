@@ -121,7 +121,6 @@ venv.bak/
 
 # Local logs and screenshots
 *.png
-*.txt
 *.log
 nahdi_debug.txt
 debug_log.txt
