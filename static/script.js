@@ -70,7 +70,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ── BEST DEALS LOGIC ─────────────────────────────────────────────────────
 
-    async function fetchDeals(retries = 3) {
+    async function fetchDeals(retries = 8) {
         for (let attempt = 0; attempt < retries; attempt++) {
             try {
                 const controller = new AbortController();
@@ -79,8 +79,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 clearTimeout(timeoutId);
                 if (!res.ok) { dealsLoading.textContent = ''; return; }
                 dealsData = await res.json();
+                if (!dealsData || dealsData.length === 0) {
+                    if (attempt < retries - 1) {
+                        dealsLoading.textContent = `جاري تحميل أفضل العروض... (محاولة ${attempt + 2})`;
+                        await new Promise(r => setTimeout(r, 5000));
+                        continue;
+                    }
+                    dealsLoading.textContent = '';
+                    return;
+                }
                 dealsLoading.style.display = 'none';
-                if (!dealsData || dealsData.length === 0) return;
                 renderDealsChunk();
                 return;
             } catch (e) {
