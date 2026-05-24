@@ -398,6 +398,21 @@ body {
     margin-top: 0.15rem;
 }
 
+.deal-price-strike {
+    font-size: 0.95rem;
+    text-decoration: line-through;
+    color: var(--text-muted);
+    font-weight: 500;
+    margin-right: 0.4rem;
+}
+
+.deal-promo-label {
+    font-size: 0.7rem;
+    color: #34d399;
+    font-weight: 600;
+    margin-top: 0.1rem;
+}
+
 .deal-buy-btn {
     background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
     color: white;

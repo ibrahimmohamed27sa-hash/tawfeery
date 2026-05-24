@@ -141,11 +141,45 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const badgeLabel = hasOffer ? '🔥 عرض' : '💊 منتج';
 
-        // Unit price display
+        // Price processing — apply promo to effective price
+        const regularPrice = parseFloat(item.price);
+        const promoInfo = getPromoInfo(regularPrice, item.offer);
+        let displayPrice = regularPrice;
+        let strikePrice = null;
+
+        if (promoInfo) {
+            if (promoInfo.type === 'discount') {
+                displayPrice = promoInfo.unitPrice;
+                strikePrice = regularPrice;
+            } else if (promoInfo.type === 'bundle') {
+                displayPrice = promoInfo.unitPrice;
+                strikePrice = regularPrice;
+            } else if (promoInfo.type === 'delivery') {
+                displayPrice = promoInfo.deliveryPrice;
+                strikePrice = regularPrice;
+            }
+        }
+
+        const strikeHtml = strikePrice && strikePrice < regularPrice
+            ? `<span class="deal-price-strike">${regularPrice.toFixed(2)}</span>`
+            : '';
+
+        // Unit price display (based on effective price)
         let unitPriceHtml = '';
         if (item.quantity && item.quantity > 0) {
-            const unitP = parseFloat(item.price) / item.quantity;
+            const unitP = displayPrice / item.quantity;
             unitPriceHtml = `<div class="deal-unit-price">${unitP.toFixed(3)} SAR / الحبة</div>`;
+        }
+
+        // Promo label for deal cards
+        let promoLabel = '';
+        if (promoInfo && promoInfo.type === 'discount' && strikePrice) {
+            const saving = regularPrice - displayPrice;
+            promoLabel = `<div class="deal-promo-label">وفّر ${saving.toFixed(2)} SAR</div>`;
+        } else if (promoInfo && promoInfo.type === 'bundle' && strikePrice) {
+            promoLabel = `<div class="deal-promo-label">سعر الحبة بالعرض</div>`;
+        } else if (promoInfo && promoInfo.type === 'delivery' && strikePrice) {
+            promoLabel = `<div class="deal-promo-label">سعر التوصيل</div>`;
         }
 
         div.innerHTML = `
@@ -159,7 +193,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 ${offerHtml}
                 <div class="deal-price-row">
                     <div>
-                        <span class="deal-price">${parseFloat(item.price).toFixed(2)} <span class="deal-currency">SAR</span></span>
+                        <span class="deal-price">${displayPrice.toFixed(2)} <span class="deal-currency">SAR</span></span>
+                        ${strikeHtml}
+                        ${promoLabel}
                         ${unitPriceHtml}
                     </div>
                     <a href="${item.link}" target="_blank" rel="noopener noreferrer" class="deal-buy-btn">عرض</a>
@@ -369,7 +405,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const strikeValEl = clone.querySelector('.price-value-strikethrough');
         const promoTagEl = clone.querySelector('.promo-price-tag');
         
-        if (promoInfo && promoInfo.type === 'bundle' && promoInfo.unitPrice < regularPrice) {
+        if (promoInfo && promoInfo.type === 'discount' && promoInfo.unitPrice < regularPrice) {
+            const saving = regularPrice - promoInfo.unitPrice;
+            priceValEl.textContent = promoInfo.unitPrice.toFixed(2);
+            strikeValEl.textContent = regularPrice.toFixed(2);
+            strikeValEl.classList.remove('hidden');
+            promoTagEl.innerHTML = `🏷️ خصم ${Math.round(promoInfo.pct * 100)}% (وفّر ${saving.toFixed(2)} SAR)`;
+            promoTagEl.classList.remove('hidden');
+            promoTagEl.style.color = '#34d399';
+            promoTagEl.style.borderColor = 'rgba(52,211,153,0.3)';
+            promoTagEl.style.background = 'rgba(16,185,129,0.1)';
+        } else if (promoInfo && promoInfo.type === 'bundle' && promoInfo.unitPrice < regularPrice) {
             // Bundle deal: show effective unit price as main price with strikethrough
             priceValEl.textContent = promoInfo.unitPrice.toFixed(2);
             strikeValEl.textContent = regularPrice.toFixed(2);
@@ -902,18 +948,24 @@ document.addEventListener('DOMContentLoaded', () => {
             return { type: 'bundle', unitPrice: (price * 2) / 3 };
         }
 
+        // Simple discount: "خصم X%" (straight percentage off, e.g. خصم 21%)
+        m = o.match(/خصم\s*(\d+)\s*%/u);
+        if (m) {
+            const discountPct = parseFloat(m[1]) / 100;
+            const discountedPrice = price * (1 - discountPct);
+            return { type: 'discount', pct: discountPct, unitPrice: discountedPrice };
+        }
+
         // Generic: X% off second item – e.g. "خصم 30% على الحبة الثانية", "50% off second"
         m = o.match(/(?:خصم\s*)?(\d+)\s*%(?:\s*(?:على|off)?\s*(?:الحبه?\s*)?(?:الثانيه?|second))/u);
         if (!m) {
-            // Alternative Arabic form: "الحبة الثانية بـ X%" or any line with both % and الثانية/second
-            m = o.match(/(\d+)\s*%/) ;
-            if (m && !( o.includes('الثانيه') || o.includes('الثانية') || o.includes('second') )) {
-                m = null; // only use generic fallback if explicitly about second item
+            m = o.match(/(\d+)\s*%/);
+            if (m && !(o.includes('الثانيه') || o.includes('الثانية') || o.includes('second'))) {
+                m = null;
             }
         }
         if (m) {
-            const discountPct = parseFloat(m[1]) / 100; // e.g. 0.30 for 30%
-            // effective unit price when buying 2: (full + discounted) / 2
+            const discountPct = parseFloat(m[1]) / 100;
             const unitPrice = (price + price * (1 - discountPct)) / 2;
             return { type: 'bundle', pct: discountPct, unitPrice };
         }
@@ -997,6 +1049,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 const singles = quantity % 2;
                 return pairs * (price + price * 0.5) + (singles * price);
             }
+        } else if (info.type === 'discount') {
+            return info.unitPrice * quantity;
         } else if (info.type === 'delivery') {
             return info.deliveryPrice * quantity;
         }
@@ -1128,7 +1182,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const regularPrice = parseFloat(item.price);
         const promoInfo = getPromoInfo(regularPrice, item.offer);
         
-        if (promoInfo && promoInfo.type === 'bundle' && promoInfo.unitPrice < regularPrice) {
+        if (promoInfo && promoInfo.type === 'discount' && promoInfo.unitPrice < regularPrice) {
+            const saving = regularPrice - promoInfo.unitPrice;
+            modalPriceValue.innerHTML = `${promoInfo.unitPrice.toFixed(2)} SAR <span style="font-size: 0.95rem; text-decoration: line-through; color: var(--text-muted); font-weight: normal; margin-right: 0.5rem;">${regularPrice.toFixed(2)} SAR</span> <div style="font-size:0.75rem; color:#34d399; margin-top:0.25rem;">🏷️ خصم ${Math.round(promoInfo.pct * 100)}% (وفّر ${saving.toFixed(2)} SAR)</div>`;
+        } else if (promoInfo && promoInfo.type === 'bundle' && promoInfo.unitPrice < regularPrice) {
             // Bundle deal: show effective per-unit price with strikethrough
             modalPriceValue.innerHTML = `${promoInfo.unitPrice.toFixed(2)} SAR <span style="font-size: 0.95rem; text-decoration: line-through; color: var(--text-muted); font-weight: normal; margin-right: 0.5rem;">${regularPrice.toFixed(2)} SAR</span> <div style="font-size:0.75rem; color:#34d399; margin-top:0.25rem;">(سعر الحبة بالعرض)</div>`;
         } else if (promoInfo && promoInfo.type === 'delivery' && promoInfo.deliveryPrice < regularPrice) {
