@@ -929,17 +929,22 @@ document.addEventListener('DOMContentLoaded', () => {
             return { type: 'delivery', deliveryPrice: parseFloat(m[1]) };
         }
 
-        // Bundle: Buy 2 For X → effective unit = X/2
+        // Bundle: "اشتري 2 بقيمة 1" → Buy 2 for price of 1 (1+1 free)
+        if (o.includes('بقيمة 1') || (o.includes('2 بقيمة') && o.includes('1'))) {
+            return { type: 'bundle', unitPrice: price / 2 };
+        }
+
+        // Bundle: Buy 2 For X / اشتري 2 بسعر X
         m = o.match(/(?:buy\s+2\s+for|اشتري\s+2\s+بسعر)\s*(\d+\.?\d*)/);
         if (m) return { type: 'bundle', unitPrice: parseFloat(m[1]) / 2 };
 
         // Bundle: Buy 2nd for X → effective unit = (price + X) / 2
         // Make the Kashida (ـ) optional using بـ?
-        m = o.match(/(?:الحبة\s+الثانية\s+بـ?|buy\s+2nd\s+for)\s*(\d+\.?\d*)/);
+        m = o.match(/(?:الحبة\s+الثانية\s+بـ?|buy\s+2nd\s+for|اشتري\s+الحبة\s+الثانية\s+بـ?)\s*(\d+\.?\d*)/);
         if (m) return { type: 'bundle', unitPrice: (price + parseFloat(m[1])) / 2 };
 
-        // Bundle: 1+1 free
-        if (o.includes('1 + 1') || o.includes('1+1') || (o.includes('مجانا') && o.includes('1') && !o.includes('2')) || o.includes('حبة + حبة مجانا') || o.includes('حبة + حبة مجاناً')) {
+        // Bundle: 1+1 free (or اشتري 2 بقيمة 1)
+        if (o.includes('1 + 1') || o.includes('1+1') || o.includes('بقيمة 1') || (o.includes('مجانا') && o.includes('1') && !o.includes('2')) || o.includes('حبة + حبة مجانا') || o.includes('حبة + حبة مجاناً')) {
             return { type: 'bundle', unitPrice: price / 2 };
         }
 
@@ -948,8 +953,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return { type: 'bundle', unitPrice: (price * 2) / 3 };
         }
 
-        // Simple discount: "خصم X%" (straight percentage off, e.g. خصم 21%)
-        m = o.match(/خصم\s*(\d+)\s*%/u);
+        // Simple discount: "خصم X%" or "وفر X%" (straight percentage off)
+        m = o.match(/(?:خصم|وفر|save)\s*(\d+)\s*%/ui);
         if (m) {
             const discountPct = parseFloat(m[1]) / 100;
             const discountedPrice = price * (1 - discountPct);
@@ -1001,8 +1006,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (info.type === 'bundle') {
             const o = offer.toLowerCase();
 
+            // Buy 2 for price of 1 (اشتري 2 بقيمة 1 = 1+1 free)
+            if (o.includes('بقيمة 1') || (o.includes('2 بقيمة') && o.includes('1'))) {
+                const pairs = Math.floor(quantity / 2);
+                const singles = quantity % 2;
+                return (pairs + singles) * price;
+            }
+
             // Buy 2 For X
-            let m = o.match(/(?:buy\s+2\s+for|اشتري\s+2\s+بسعر)\s*(\d+\.?\d*)/);
+            let m = o.match(/(?:buy\s+2\s+for|اشتري\s+2\s+بسعر|اشتري\s+2\s+بقيمة)\s*(\d+\.?\d*)/);
             if (m) {
                 const promoPrice = parseFloat(m[1]);
                 const pairs = Math.floor(quantity / 2);
@@ -1012,7 +1024,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Buy 2nd for X
             // Make the Kashida (ـ) optional using بـ?
-            m = o.match(/(?:الحبة\s+الثانية\s+بـ?|buy\s+2nd\s+for)\s*(\d+\.?\d*)/);
+            m = o.match(/(?:الحبة\s+الثانية\s+بـ?|buy\s+2nd\s+for|اشتري\s+الحبة\s+الثانية\s+بـ?)\s*(\d+\.?\d*)/);
             if (m) {
                 const secondPrice = parseFloat(m[1]);
                 const pairs = Math.floor(quantity / 2);
@@ -1020,8 +1032,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 return pairs * (price + secondPrice) + (singles * price);
             }
 
-            // 1+1 free
-            if (o.includes('1 + 1') || o.includes('1+1') || (o.includes('مجانا') && o.includes('1') && !o.includes('2')) || o.includes('حبة + حبة مجانا') || o.includes('حبة + حبة مجاناً')) {
+            // 1+1 free (or "اشتري 2 بقيمة 1")
+            if (o.includes('1 + 1') || o.includes('1+1') || o.includes('بقيمة 1') || (o.includes('مجانا') && o.includes('1') && !o.includes('2')) || o.includes('حبة + حبة مجانا') || o.includes('حبة + حبة مجاناً')) {
                 const pairs = Math.floor(quantity / 2);
                 const singles = quantity % 2;
                 return (pairs + singles) * price;
