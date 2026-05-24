@@ -80,21 +80,14 @@ def enrich_item(item, raw_hit=None):
     if 'unit_price' not in item or not item['unit_price']:
         item['unit_price'] = compute_unit_price(item['price'], item['quantity'])
 
-    # Check for special/offer price from Nahdi's redbox or special pricing
-    if raw_hit and isinstance(raw_hit, dict):
-        # Check redbox_promotion (special offer badge)
-        if not item.get('offer'):
-            redbox_end = raw_hit.get('redbox_pl_end_date', '')
-            if redbox_end:
-                item['offer'] = f"عرض ساري حتى {redbox_end}"
-
-        # Check discount percentage
+    # Check for special/offer price from raw hit (only if scraper found NO offer)
+    if raw_hit and isinstance(raw_hit, dict) and not item.get('offer'):
+        # Discount percentage (e.g. خصم 21%)
         discount_pct = raw_hit.get('discount', 0)
-        if discount_pct and not item.get('offer'):
+        if discount_pct and discount_pct < 100:
             item['offer'] = f"خصم {discount_pct}%"
-
-        # Check clearance
-        if raw_hit.get('clearance_offer') == 'Yes' and not item.get('offer'):
+        # Clearance
+        elif raw_hit.get('clearance_offer') == 'Yes':
             item['offer'] = 'تخفيضات التصفية'
 
     return item
