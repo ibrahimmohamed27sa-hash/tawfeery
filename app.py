@@ -459,16 +459,15 @@ def deals():
     now = time.time()
     # Serve cache immediately if available (up to 1 hour stale)
     if _deals_cache and (now - _deals_cache_time) < 3600:
-        # Refresh in background if cache is older than 15 min
         if (now - _deals_cache_time) > 900 and not _deals_refreshing:
             _deals_refreshing = True
             threading.Thread(target=_refresh_deals, daemon=True).start()
         return Response(json.dumps(_deals_cache, ensure_ascii=False), mimetype='application/json')
 
-    # No cache — do a quick first fetch synchronously
-    _refresh_deals()
-    if _deals_cache:
-        return Response(json.dumps(_deals_cache, ensure_ascii=False), mimetype='application/json')
+    # No cache — trigger background refresh, return empty (frontend will retry)
+    if not _deals_refreshing:
+        _deals_refreshing = True
+        threading.Thread(target=_refresh_deals, daemon=True).start()
     return Response(json.dumps([], ensure_ascii=False), mimetype='application/json')
 
 
