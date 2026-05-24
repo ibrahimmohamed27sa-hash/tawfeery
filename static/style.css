@@ -408,6 +408,36 @@ body {
     box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
 }
 
+.deal-type-badge {
+    font-size: 0.65rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 12px;
+    font-weight: 700;
+}
+
+.deal-type-offer {
+    background: rgba(239, 68, 68, 0.15);
+    color: #fb7185;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    animation: pulseGlow 2s infinite alternate;
+}
+
+.deal-type-regular {
+    background: rgba(16, 185, 129, 0.1);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.deal-card.has-offer {
+    border-color: rgba(239, 68, 68, 0.2);
+    background: linear-gradient(135deg, rgba(20,27,45,0.8) 0%, rgba(40,20,30,0.6) 100%);
+}
+
+.deal-card.has-offer:hover {
+    border-color: rgba(239, 68, 68, 0.4);
+    box-shadow: 0 15px 30px rgba(0,0,0,0.3), 0 0 20px rgba(239,68,68,0.08);
+}
+
 /* Loading & Error States */
 .loading-state, .error-state {
     text-align: center;

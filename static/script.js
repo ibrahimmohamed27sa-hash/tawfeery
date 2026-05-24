@@ -90,6 +90,9 @@ document.addEventListener('DOMContentLoaded', () => {
         div.className = 'deal-card';
         div.style.animationDelay = `${idx * 0.06}s`;
 
+        const hasOffer = !!item.offer;
+        if (hasOffer) div.classList.add('has-offer');
+
         const img = item.image
             ? `<img src="${item.image}" alt="${item.name}" class="deal-img" onerror="this.style.display='none';this.parentElement.style.background='var(--bg-secondary)'">`
             : '<div class="deal-img-placeholder">💊</div>';
@@ -102,10 +105,15 @@ document.addEventListener('DOMContentLoaded', () => {
             ? `<div class="deal-offer-tag">🎁 ${item.offer}</div>`
             : '';
 
+        const badgeLabel = hasOffer ? '🔥 عرض' : '💊 منتج';
+
         div.innerHTML = `
             <div class="deal-img-wrap">${img}</div>
             <div class="deal-body">
-                <div class="deal-store-badge ${badgeClass}">${item.store}</div>
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <div class="deal-store-badge ${badgeClass}">${item.store}</div>
+                    <span class="deal-type-badge ${hasOffer ? 'deal-type-offer' : 'deal-type-regular'}">${badgeLabel}</span>
+                </div>
                 <div class="deal-name">${item.name}</div>
                 ${offerHtml}
                 <div class="deal-price-row">

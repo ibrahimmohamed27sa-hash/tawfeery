@@ -320,7 +320,12 @@ def search():
 
 # ── Best Deals / Featured Endpoint ────────────────────────────────────────────
 
-POPULAR_QUERIES = ['Panadol', 'فيفادول', 'سولبادين', 'جافيسكون', 'كلاريتين', 'بروفين', 'فولتارين', 'ادفيل']
+POPULAR_QUERIES = [
+    'Panadol', 'فيفادول', 'سولبادين', 'جافيسكون', 'كلاريتين',
+    'بروفين', 'فولتارين', 'ادفيل', 'سيتال', 'كونجستيل',
+    'اوكسي', 'نوروفين', 'بنادول نايت', 'دولوبران',
+    'موف', 'سعر خاص', 'عرض', 'تخفيضات'
+]
 _deals_cache = None
 _deals_cache_time = 0
 
@@ -359,20 +364,38 @@ def deals():
             except Exception:
                 continue
 
-    # Deduplicate by name similarity (keep cheapest per unique product)
-    from collections import OrderedDict
-    best_map = {}
+    # Separate items with offers vs without
+    offer_items = []
+    regular_items = []
+    seen_offer_names = set()
+    seen_regular_names = set()
+
     for item in all_items:
-        key = item['name'].split(' ')[0].lower().replace('ـ', '')  # first token as key
-        if key not in best_map or item['price'] < best_map[key]['price']:
-            best_map[key] = item
+        key = item['name'].split(' ')[0].lower().replace('ـ', '')
+        has_offer = bool(item.get('offer'))
+        if has_offer:
+            if key not in seen_offer_names:
+                seen_offer_names.add(key)
+                offer_items.append(item)
+        else:
+            if key not in seen_regular_names:
+                seen_regular_names.add(key)
+                regular_items.append(item)
 
-    # Sort: items with offers first, then by price ascending
-    def sort_key(item):
-        has_offer = 1 if item.get('offer') else 0
-        return (has_offer, item['price'])
+    # Sort offers: best discount value first (price descending = bigger saving potential)
+    offer_items.sort(key=lambda x: x['price'], reverse=True)
 
-    deals_list = sorted(best_map.values(), key=sort_key)[:24]
+    # Sort regular: cheapest first
+    regular_items.sort(key=lambda x: x['price'])
+
+    # Final list: all offers + top cheap regular items (marked)
+    deals_list = offer_items[:20]
+    # Add up to 8 cheap regular items if we have room
+    if len(deals_list) < 12:
+        for ri in regular_items:
+            if len(deals_list) >= 12:
+                break
+            deals_list.append(ri)
 
     _deals_cache = deals_list
     _deals_cache_time = time.time()
