@@ -389,11 +389,11 @@ def deals():
     regular_items.sort(key=lambda x: x['price'])
 
     # Final list: all offers + top cheap regular items (marked)
-    deals_list = offer_items[:20]
-    # Add up to 8 cheap regular items if we have room
-    if len(deals_list) < 12:
+    deals_list = offer_items[:48]
+    # Add up to 24 cheap regular items if we have room
+    if len(deals_list) < 24:
         for ri in regular_items:
-            if len(deals_list) >= 12:
+            if len(deals_list) >= 48:
                 break
             deals_list.append(ri)
 

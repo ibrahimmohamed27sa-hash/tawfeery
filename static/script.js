@@ -76,7 +76,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!items || items.length === 0) return;
 
             dealsGrid.innerHTML = '';
-            items.slice(0, 12).forEach((item, idx) => {
+            items.slice(0, 48).forEach((item, idx) => {
                 const card = buildDealCard(item, idx);
                 dealsGrid.appendChild(card);
             });
