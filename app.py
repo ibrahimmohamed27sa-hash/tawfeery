@@ -59,13 +59,44 @@ def compute_unit_price(price, quantity):
     return None
 
 
-def enrich_item(item):
-    """Add quantity and unit_price fields to a scraper result."""
-    if 'quantity' not in item or not item['quantity']:
+def enrich_item(item, raw_hit=None):
+    """Add quantity and unit_price fields to a scraper result.
+    If raw_hit is provided, check for additional price/promo fields."""
+    # Quantity: try raw hit's quantity field first (e.g. Nahdi's "24 حبة")
+    qty = item.get('quantity')
+    if not qty and raw_hit:
+        raw_qty = raw_hit.get('quantity') if isinstance(raw_hit, dict) else None
+        if raw_qty:
+            # "24 حبة" -> 24  or  "30 حفاض" -> 30
+            import re as _re
+            m = _re.search(r'(\d+)', str(raw_qty))
+            if m:
+                qty = int(m.group(1))
+    if not qty:
         qty = extract_quantity(item.get('name', ''))
-        item['quantity'] = qty
+    item['quantity'] = qty
+
+    # Unit price
     if 'unit_price' not in item or not item['unit_price']:
         item['unit_price'] = compute_unit_price(item['price'], item['quantity'])
+
+    # Check for special/offer price from Nahdi's redbox or special pricing
+    if raw_hit and isinstance(raw_hit, dict):
+        # Check redbox_promotion (special offer badge)
+        if not item.get('offer'):
+            redbox_end = raw_hit.get('redbox_pl_end_date', '')
+            if redbox_end:
+                item['offer'] = f"عرض ساري حتى {redbox_end}"
+
+        # Check discount percentage
+        discount_pct = raw_hit.get('discount', 0)
+        if discount_pct and not item.get('offer'):
+            item['offer'] = f"خصم {discount_pct}%"
+
+        # Check clearance
+        if raw_hit.get('clearance_offer') == 'Yes' and not item.get('offer'):
+            item['offer'] = 'تخفيضات التصفية'
+
     return item
 
 
@@ -111,7 +142,7 @@ def scrape_united(query):
                             'link': link,
                             'offer': offer_text,
                         }
-                        enrich_item(item)
+                        enrich_item(item, raw_hit=h)
                         results.append(item)
                     except Exception:
                         pass
@@ -173,9 +204,16 @@ def scrape_nahdi(query):
                 hits = results_list[0].get('hits', [])
                 for h in hits[:50]:
                     name = h.get('name', '')
-                    price_val = h.get('price', {})
+                    price_val = h.get('price', 0)
                     if isinstance(price_val, dict):
-                        price_val = price_val.get('SAR', {}).get('default', 0)
+                        sar = price_val.get('SAR', {})
+                        price_val = sar.get('default', 0)
+                        # Check for active special price
+                        sp = sar.get('special_price')
+                        if sp and sar.get('special_from_date') and sar.get('special_to_date'):
+                            price_val = sp
+                    elif not isinstance(price_val, (int, float)):
+                        price_val = 0
                     img_url = h.get('image_url') or h.get('thumbnail_url', '')
                     link = h.get('url', '')
                     sku = h.get('sku', '')
@@ -211,7 +249,7 @@ def scrape_nahdi(query):
                                 'link': link,
                                 'offer': offer_text,
                             }
-                            enrich_item(item)
+                            enrich_item(item, raw_hit=h)
                             results.append(item)
                         except Exception:
                             pass
@@ -330,7 +368,7 @@ def scrape_aldawaa(query):
                     'link': link,
                     'offer': offer_text,
                 }
-                enrich_item(item)
+                enrich_item(item, raw_hit=p)
                 results.append(item)
             except Exception:
                 pass
