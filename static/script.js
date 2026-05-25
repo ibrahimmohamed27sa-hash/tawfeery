@@ -1,3 +1,20 @@
+// ── XSS Sanitizer ──────────────────────────────────────────────────────────
+function sanitize(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#x27;');
+}
+function sanitizeUrl(str) {
+    if (!str) return '';
+    const url = String(str).trim();
+    if (/^(https?:\/\/|data:image\/|blob:)/i.test(url)) return url;
+    return '';
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     // PWA: Service Worker + Install Prompt
     let deferredPrompt = null;
@@ -199,7 +216,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (hasOffer) div.classList.add('has-offer');
 
         const img = item.image
-            ? `<img src="${item.image}" alt="${item.name}" class="deal-img" onerror="this.style.display='none';this.parentElement.style.background='var(--bg-secondary)'">`
+            ? `<img src="${sanitizeUrl(item.image)}" alt="${sanitize(item.name)}" class="deal-img" onerror="this.style.display='none';this.parentElement.style.background='var(--bg-secondary)'">`
             : '<div class="deal-img-placeholder">💊</div>';
 
         const badgeClass = item.store.includes('Nahdi') ? 'store-nahdi'
@@ -207,7 +224,7 @@ document.addEventListener('DOMContentLoaded', () => {
             : 'store-united';
 
         const offerHtml = item.offer
-            ? `<div class="deal-offer-tag">🎁 ${item.offer}</div>`
+            ? `<div class="deal-offer-tag">🎁 ${sanitize(item.offer)}</div>`
             : '';
 
         const badgeLabel = hasOffer ? '🔥 عرض' : '💊 منتج';
@@ -257,10 +274,10 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="deal-img-wrap">${img}</div>
             <div class="deal-body">
                 <div style="display:flex;justify-content:space-between;align-items:center;">
-                    <div class="deal-store-badge ${badgeClass}">${item.store}</div>
+                    <div class="deal-store-badge ${badgeClass}">${sanitize(item.store)}</div>
                     <span class="deal-type-badge ${hasOffer ? 'deal-type-offer' : 'deal-type-regular'}">${badgeLabel}</span>
                 </div>
-                <div class="deal-name">${item.name}</div>
+                <div class="deal-name">${sanitize(item.name)}</div>
                 ${offerHtml}
                 <div class="deal-price-row">
                     <div>
@@ -753,10 +770,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
             div.innerHTML = `
                 <div style="display: flex; gap: 0.8rem; align-items: center; width: 100%;">
-                    <img src="${item.image || 'https://via.placeholder.com/150'}" alt="${item.name}" class="basket-item-img" onerror="this.src='https://via.placeholder.com/150'">
+                    <img src="${sanitizeUrl(item.image) || 'https://via.placeholder.com/150'}" alt="${sanitize(item.name)}" class="basket-item-img" onerror="this.src='https://via.placeholder.com/150'">
                     <div class="basket-item-info">
-                        <div class="basket-item-name">${item.name}</div>
-                        <div class="basket-item-store">${item.store}</div>
+                        <div class="basket-item-name">${sanitize(item.name)}</div>
+                        <div class="basket-item-store">${sanitize(item.store)}</div>
                         <div class="basket-item-qty-controls">
                             <button class="qty-btn qty-minus">-</button>
                             <span class="qty-val">${q}</span>
@@ -1400,7 +1417,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 row.innerHTML = `
                     <div class="checkout-item-info">
-                        <div class="checkout-item-title" style="color: var(--text-muted);" title="${basketItem.name}">${basketItem.name}</div>
+                        <div class="checkout-item-title" style="color: var(--text-muted);" title="${sanitize(basketItem.name)}">${sanitize(basketItem.name)}</div>
                         <div class="checkout-item-price">${q} × نقص</div>
                     </div>
                     <span class="checkout-item-missing-badge">غير متوفر</span>

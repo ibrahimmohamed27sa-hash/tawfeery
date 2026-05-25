@@ -1,5 +1,7 @@
 FROM python:3.11-slim
 
+RUN useradd -m -u 1000 appuser
+
 WORKDIR /app
 
 EXPOSE 5050
@@ -10,6 +12,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy project files
 COPY . .
+RUN chown -R appuser:appuser /app
+
+USER appuser
 
 # gevent workers: each worker handles hundreds of concurrent connections
 # 2 workers × 1000 conns each = handles 2000 simultaneous requests

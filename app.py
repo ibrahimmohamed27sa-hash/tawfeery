@@ -10,8 +10,42 @@ import math
 import threading
 import cache
 import time
+import os
+import secrets
 
 app = Flask(__name__)
+
+# ── Security: CSP & Headers ──────────────────────────────────────────────────
+ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', '')
+
+@app.after_request
+def security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    response.headers['Permissions-Policy'] = 'camera=(), microphone=(), geolocation=()'
+    if request.path.startswith('/api/') or request.path == '/':
+        response.headers['Content-Security-Policy'] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline'; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            "font-src 'self' https://fonts.gstatic.com; "
+            "img-src 'self' data: https:; "
+            "connect-src 'self'; "
+            "frame-ancestors 'none'; "
+            "base-uri 'self'"
+        )
+    return response
+
+# ── Input Sanitization ────────────────────────────────────────────────────────
+def sanitize_query(q):
+    if not q:
+        return ''
+    q = q.strip()[:100]  # max 100 chars
+    # Allow Arabic/English letters, digits, spaces, common pharmacy terms
+    q = re.sub(r'[^\w\s\-أ-يإآةؤئىء]+', '', q)
+    return q.strip()
 
 # Rate limiting: max 20 search requests per minute per IP, 10 deals fetches per minute
 def check_rate(ip, endpoint, limit, window=60):
@@ -396,7 +430,7 @@ def index():
 
 @app.route('/api/search')
 def search():
-    query = request.args.get('q', '').strip()
+    query = sanitize_query(request.args.get('q', ''))
     if not query:
         return Response("data: DONE\n\n", mimetype='text/event-stream')
 
@@ -569,15 +603,58 @@ def sitemap_xml():
 
 # ── Admin / Analytics Dashboard ───────────────────────────────────────────────
 
+def check_admin_auth():
+    if ADMIN_PASSWORD:
+        auth = request.headers.get('Authorization')
+        if not auth or not auth.startswith('Basic '):
+            return False
+        try:
+            import base64
+            decoded = base64.b64decode(auth[6:]).decode('utf-8')
+            user, pw = decoded.split(':', 1)
+            if pw != ADMIN_PASSWORD:
+                return False
+        except Exception:
+            return False
+    return True
+
+def admin_unauthorized():
+    return Response('Unauthorized', 401, {'WWW-Authenticate': 'Basic realm="Tawfeery Admin"'})
+
 @app.route('/admin')
 def admin_dashboard():
+    if not check_admin_auth():
+        return admin_unauthorized()
     stats = cache.get_analytics_summary()
+    # Mask IPs for privacy
+    if 'recent_searches' in stats:
+        stats['recent_searches'] = stats['recent_searches'][:20]
+    if 'recent_visits' in stats:
+        for v in stats['recent_visits']:
+            ip = v.get('ip', '')
+            v['ip'] = mask_ip(ip)
+        stats['recent_visits'] = stats['recent_visits'][:20]
     return render_template('admin.html', stats=stats)
 
 @app.route('/api/admin/stats')
 def admin_stats_api():
+    if not check_admin_auth():
+        return admin_unauthorized()
     stats = cache.get_analytics_summary()
+    if 'recent_searches' in stats:
+        stats['recent_searches'] = stats['recent_searches'][:20]
+    if 'recent_visits' in stats:
+        for v in stats['recent_visits']:
+            ip = v.get('ip', '')
+            v['ip'] = mask_ip(ip)
+        stats['recent_visits'] = stats['recent_visits'][:20]
     return Response(json.dumps(stats, ensure_ascii=False), mimetype='application/json')
+
+def mask_ip(ip):
+    parts = ip.split('.')
+    if len(parts) == 4:
+        return f'{parts[0]}.{parts[1]}.*.*'
+    return ip
 
 
 # Pre-warm deals cache on startup
