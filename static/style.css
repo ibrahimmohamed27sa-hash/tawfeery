@@ -187,6 +187,10 @@ body {
     margin-left: 0.4rem;
 }
 
+a.quick-pill {
+    text-decoration: none;
+    color: var(--text-muted);
+}
 .quick-pill, .history-pill {
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid rgba(255, 255, 255, 0.05);
@@ -196,7 +200,7 @@ body {
     font-size: 0.85rem;
     cursor: pointer;
     transition: var(--transition-smooth);
-    display: flex;
+    display: inline-flex;
     align-items: center;
     gap: 0.3rem;
 }
