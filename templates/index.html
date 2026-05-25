@@ -12,7 +12,7 @@
     <meta name="robots" content="index, follow">
     <meta name="author" content="Tawfeery">
     <meta name="msvalidate.01" content="EE640DF8E1C58D3146775F42854AF134">
-    <link rel="canonical" href="{{ request.url }}">
+    <link rel="canonical" href="{{ request.url_root.rstrip('/') }}">
     <meta name="theme-color" content="#10b981">
 
     <!-- Open Graph -->
@@ -66,15 +66,30 @@
         "@type": "WebSite",
         "name": "توفيري Tawfeery",
         "url": "{{ request.url_root.rstrip('/') }}",
+        "alternateName": "Tawfeery",
         "potentialAction": {
             "@type": "SearchAction",
             "target": {
                 "@type": "EntryPoint",
-                "urlTemplate": "{{ request.url_root.rstrip('/') }}/api/search?q={search_term_string}"
+                "urlTemplate": "{{ request.url_root.rstrip('/') }}/?q={search_term_string}"
             },
             "query-input": "required name=search_term_string"
         },
         "inLanguage": "ar-SA"
+    }
+    </script>
+
+    <!-- Structured Data: BreadcrumbList -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [{
+            "@type": "ListItem",
+            "position": 1,
+            "name": "توفيري",
+            "item": "{{ request.url_root.rstrip('/') }}"
+        }]
     }
     </script>
 </head>
