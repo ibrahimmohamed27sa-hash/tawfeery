@@ -1245,25 +1245,16 @@ document.addEventListener('DOMContentLoaded', () => {
             .replace(/[،؛؟?–—:;!*&|"'\-_.,()\/\[\]+]/g, ' ')
             .replace(/\s+/g, ' ')
             .trim();
-        // Remove common descriptive phrases that hinder matching
-        const descPatterns = [
-            'للبيعشره الجافه', 'للبيعشره الدهنيه', 'للبيعشره العاديه', 'للبيعشره المختلطه',
-            'قابل للمضغ', 'قابله للمضغ', 'للبالغين', 'للاطفال', 'للأطفال',
-            'بنكهه', 'بتركيز', 'تركيز', 'طبي', 'خلاصه',
-        ];
-        for (const pat of descPatterns) {
-            cleaned = cleaned.replace(pat, '');
-        }
-        return cleaned.replace(/\s+/g, ' ').trim();
+        return cleaned;
     }
 
     function getTokens(name) {
         const cleaned = cleanName(name);
         const stopWords = new Set([
-            'علبه', 'قرص', 'كبسوله', 'مل', 'جم', 'حبة', 'حبة/', 'حبات', 'ملج', 'جرام',
+            'علبه', 'قرص', 'كبسوله', 'مل', 'جم', 'حبه', 'حبات', 'ملج', 'جرام',
             'tablets', 'capsules', 'tabs', 'cap', 'ml', 'mg', 'g', 'pack', 'pcs', 'tablet', 'capsule',
             'من', 'مع', 'في', 'ال', 'ar', 'en', 'او', 'أو', 'ام', 'أم', 'على', 'عن',
-            'للبالغين', 'للاطفال', 'للأطفال',
+            'للبالغين', 'للاطفال', 'للأطفال', 'باي', 'و', 'فقط',
         ]);
         return cleaned.split(' ').map(t => {
             let token = t;
@@ -1278,7 +1269,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function findEquivalent(item, otherStoreResults) {
-        // 1. Exact SKU match (highest priority)
+        // 1. Exact SKU match
         if (item.sku) {
             const bySku = otherStoreResults.find(c => c.sku && c.sku === item.sku);
             if (bySku) return bySku;
@@ -1297,71 +1288,35 @@ document.addEventListener('DOMContentLoaded', () => {
             const candidateTokens = getTokens(candidate.name);
             if (candidateTokens.length === 0) continue;
 
-            // Score components
-            let brandScore = 0;
-            let qtyScore = 0;
-            let tokenScore = 0;
-
-            // Brand match: try first token, then any token
-            if (candidateTokens[0] === brand) {
-                brandScore = 1.0;
-            } else if (candidateTokens.includes(brand) || itemTokens.includes(candidateTokens[0])) {
-                brandScore = 0.6;
-            } else if (itemTokens.some(t => candidateTokens.includes(t)) || candidateTokens.some(t => itemTokens.includes(t))) {
-                brandScore = 0.3;
-            } else {
-                continue; // No brand overlap at all
+            // --- Brand check: first token must match or brand must appear ---
+            if (candidateTokens[0] !== brand && !candidateTokens.includes(brand)) {
+                // Check if brand appears as substring of first token (e.g. "ماكسون" in "ماكسون-هيدراماكس")
+                const firstTokenMatch = brand.includes(candidateTokens[0]) || candidateTokens[0].includes(brand);
+                if (!firstTokenMatch) continue;
             }
 
-            // Quantity match
+            // --- Quantity check: if both have qty, they must match ---
             const candidateQty = getQty(candidate);
-            if (itemQty > 0 && candidateQty > 0) {
-                if (itemQty === candidateQty) qtyScore = 1.0;
-                else if (Math.abs(itemQty - candidateQty) <= 5) qtyScore = 0.5;
-            } else {
-                qtyScore = 0.5; // Neutral if no qty info
-            }
+            if (itemQty > 0 && candidateQty > 0 && itemQty !== candidateQty) continue;
 
-            // Token intersection score
+            // --- Token intersection ---
             let intersection = 0;
             for (const t of itemTokens) {
                 if (candidateTokens.includes(t)) intersection++;
             }
-            const union = new Set([...itemTokens, ...candidateTokens]).size;
-            tokenScore = union > 0 ? intersection / union : 0;
+            const unionSize = new Set([...itemTokens, ...candidateTokens]).size;
+            const jaccard = unionSize > 0 ? intersection / unionSize : 0;
 
-            // Combined weighted score
-            const score = (brandScore * 0.45) + (qtyScore * 0.25) + (tokenScore * 0.30);
+            // --- Overlap relative to the shorter name ---
+            const minLen = Math.min(itemTokens.length, candidateTokens.length);
+            const overlap = minLen > 0 ? intersection / minLen : 0;
 
-            if (score > highestScore && score >= 0.4) {
+            // Combined score
+            const score = (jaccard * 0.5) + (overlap * 0.5);
+
+            if (score > highestScore && score >= 0.45) {
                 highestScore = score;
                 bestMatch = candidate;
-            }
-        }
-
-        // --- Fallback: looser matching ---
-        if (!bestMatch) {
-            for (const candidate of otherStoreResults) {
-                const candidateTokens = getTokens(candidate.name);
-                if (candidateTokens.length === 0) continue;
-
-                const hasBrandOverlap = candidateTokens.includes(brand) || itemTokens.includes(candidateTokens[0])
-                    || itemTokens.some(t => candidateTokens.includes(t));
-                if (!hasBrandOverlap) continue;
-
-                let intersection = 0;
-                for (const t of itemTokens) {
-                    if (candidateTokens.includes(t)) intersection++;
-                }
-                if (intersection === 0) continue;
-
-                const union = new Set([...itemTokens, ...candidateTokens]).size;
-                const score = intersection / union;
-
-                if (score > highestScore && score >= 0.25) {
-                    highestScore = score;
-                    bestMatch = candidate;
-                }
             }
         }
 
