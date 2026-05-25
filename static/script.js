@@ -1268,6 +1268,19 @@ document.addEventListener('DOMContentLoaded', () => {
         return parseInt(item.quantity) || 0;
     }
 
+    // Character-level Jaccard similarity for fuzzy brand matching
+    function brandSimilarity(a, b) {
+        if (!a || !b) return 0;
+        const setA = new Set(a);
+        const setB = new Set(b);
+        let intersection = 0;
+        for (const ch of setA) {
+            if (setB.has(ch)) intersection++;
+        }
+        const union = new Set([...setA, ...setB]).size;
+        return union > 0 ? intersection / union : 0;
+    }
+
     function findEquivalent(item, otherStoreResults) {
         // 1. Exact SKU match
         if (item.sku) {
@@ -1284,16 +1297,31 @@ document.addEventListener('DOMContentLoaded', () => {
         const brand = itemTokens[0];
         const itemQty = getQty(item);
 
-        // --- Pass 1: strict brand match + qty + token overlap ---
+        // --- Pass 1: brand match + qty + token overlap ---
         for (const candidate of otherStoreResults) {
             const candidateTokens = getTokens(candidate.name);
             if (candidateTokens.length === 0) continue;
 
-            // Brand check
-            if (candidateTokens[0] !== brand && !candidateTokens.includes(brand)) {
-                const firstTokenMatch = brand.includes(candidateTokens[0]) || candidateTokens[0].includes(brand);
-                if (!firstTokenMatch) continue;
+            // Multi-level brand check:
+            //   a) Exact token match (first token)
+            //   b) Brand present as token
+            //   c) Substring match
+            //   d) Character-level similarity > 60%
+            const firstToken = candidateTokens[0];
+            let brandOk = firstToken === brand || candidateTokens.includes(brand)
+                || brand.includes(firstToken) || firstToken.includes(brand)
+                || brandSimilarity(brand, firstToken) > 0.6;
+
+            // Also check if ANY token pairs have high char similarity
+            if (!brandOk) {
+                for (const ct of candidateTokens) {
+                    if (brandSimilarity(brand, ct) > 0.6) {
+                        brandOk = true;
+                        break;
+                    }
+                }
             }
+            if (!brandOk) continue;
 
             // Quantity check
             const candidateQty = getQty(candidate);
@@ -1310,7 +1338,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const jaccard = unionSize > 0 ? intersection / unionSize : 0;
             const minLen = Math.min(itemTokens.length, candidateTokens.length);
             const overlap = minLen > 0 ? intersection / minLen : 0;
-            const score = (jaccard * 0.5) + (overlap * 0.5);
+            const score = (jaccard * 0.4) + (overlap * 0.6);
 
             if (score > highestScore && score >= 0.45) {
                 highestScore = score;
@@ -1318,14 +1346,13 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        // --- Pass 2: fallback — no brand check, require qty match + token overlap ---
+        // --- Pass 2: fallback — no brand check, require qty + strong token overlap ---
         if (!bestMatch) {
             for (const candidate of otherStoreResults) {
                 const candidateTokens = getTokens(candidate.name);
                 if (candidateTokens.length === 0) continue;
 
                 const candidateQty = getQty(candidate);
-                // Must have matching qty if both have it
                 if (itemQty > 0 && candidateQty > 0 && itemQty !== candidateQty) continue;
 
                 let intersection = 0;
@@ -1338,10 +1365,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 const jaccard = unionSize > 0 ? intersection / unionSize : 0;
                 const minLen = Math.min(itemTokens.length, candidateTokens.length);
                 const overlap = minLen > 0 ? intersection / minLen : 0;
-                const score = (jaccard * 0.5) + (overlap * 0.5);
+                const score = (jaccard * 0.4) + (overlap * 0.6);
 
-                // Higher threshold for fallback (must have strong token overlap)
-                if (score > highestScore && score >= 0.5) {
+                // Fallback requires overlap >= 0.6 and jaccard >= 0.4
+                if (score > highestScore && overlap >= 0.6 && jaccard >= 0.4) {
                     highestScore = score;
                     bestMatch = candidate;
                 }
