@@ -1342,14 +1342,83 @@ body {
     opacity: 0;
 }
 
-/* Responsive */
+/* Splash Screen */
+.splash-screen {
+    position: fixed;
+    top: 0; right: 0; bottom: 0; left: 0;
+    background: var(--bg-color);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    transition: opacity 0.6s ease, visibility 0.6s ease;
+}
+.splash-screen.hidden {
+    opacity: 0;
+    visibility: hidden;
+}
+.splash-logo {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+    animation: pulseGlow 2s infinite alternate;
+}
+.splash-title {
+    font-size: 2.5rem;
+    font-weight: 800;
+    background: linear-gradient(135deg, #ffffff 30%, #a7f3d0 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+.splash-sub {
+    color: var(--text-muted);
+    margin-top: 0.5rem;
+    font-size: 1rem;
+}
+.splash-loader {
+    margin-top: 2rem;
+    width: 40px;
+    height: 40px;
+    border: 3px solid rgba(255,255,255,0.1);
+    border-radius: 50%;
+    border-top-color: var(--primary-color);
+    animation: spin 1s ease-in-out infinite;
+}
+
 @media (max-width: 768px) {
-    .header h1 { font-size: 2.5rem; }
-    .header h1 span { font-size: 1.3rem; }
-    .logo-icon { font-size: 2.3rem; }
+    .app-container { padding: 1.2rem 1rem; }
+    .header { margin-bottom: 1.8rem; }
+    .header h1 { font-size: 2.2rem; }
+    .header h1 span { font-size: 1.1rem; }
+    .logo-icon { font-size: 2rem; }
+    .subtitle { font-size: 1rem; }
     .search-form { flex-direction: row; }
     .search-input { padding: 0.7rem 1rem; font-size: 1rem; }
-    .search-btn { width: 44px; height: 44px; }
+    .search-btn { width: 42px; height: 42px; }
+
+    .deals-header { flex-direction: column; align-items: flex-start; gap: 0.5rem; }
+    .deals-header h2 { font-size: 1.4rem; }
+    .deals-subtitle { font-size: 0.85rem; margin-right: 0; }
+    .deals-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0.75rem; }
+    .deal-img-wrap { height: 110px; }
+    .deal-body { padding: 0.65rem; }
+    .deal-name { font-size: 0.78rem; }
+    .deal-price { font-size: 1rem; }
+    .deal-offer-tag { font-size: 0.6rem; max-width: 100%; }
+    .deal-price-strike { font-size: 0.8rem; }
+    .deal-buy-btn { font-size: 0.7rem; padding: 0.3rem 0.7rem; }
+
+    .results-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 1rem; }
+    .results-header { flex-direction: column; align-items: flex-start; gap: 0.5rem; }
+    .results-header h2 { font-size: 1.2rem; }
+    .sort-indicator { font-size: 0.75rem; padding: 0.3rem 0.7rem; }
+    .card-image-wrapper { height: 130px; }
+    .card-content { padding: 0.85rem; }
+    .product-name { font-size: 0.85rem; height: 2.5rem; }
+    .price-value { font-size: 1.2rem; }
+    .price-currency { font-size: 0.7rem; }
+    .buy-btn { font-size: 0.8rem; padding: 0.5rem; }
+    .basket-btn { width: 32px; height: 32px; font-size: 0.8rem; }
     
     .basket-drawer {
         width: 100%;
@@ -1358,6 +1427,8 @@ body {
     .basket-drawer.open {
         transform: translateX(100%);
     }
+    .basket-toggle { bottom: 1.2rem; left: 1.2rem; width: 52px; height: 52px; }
+    .basket-toggle-icon { font-size: 1.3rem; }
     
     .modal-grid {
         grid-template-columns: 1fr;
@@ -1374,6 +1445,78 @@ body {
         left: 0.8rem;
         top: 0.8rem;
     }
+    .modal-title { font-size: 1.1rem; }
+    .modal-price-value { font-size: 1.4rem; }
+}
+
+@media (max-width: 480px) {
+    .app-container { padding: 0.8rem 0.6rem; }
+    .header h1 { font-size: 1.6rem; }
+    .header h1 span { font-size: 0.85rem; }
+    .logo-icon { font-size: 1.6rem; }
+    .subtitle { font-size: 0.85rem; }
+    .search-input { font-size: 0.85rem; padding: 0.55rem 0.8rem; }
+    .search-btn { width: 36px; height: 36px; }
+    .search-btn svg { width: 18px; height: 18px; }
+    .search-chips { gap: 0.4rem; }
+    .quick-pill, .history-pill { font-size: 0.72rem; padding: 0.25rem 0.6rem; }
+    .chip-label { font-size: 0.7rem; }
+
+    .deals-header h2 { font-size: 1.1rem; }
+    .deals-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 0.5rem; }
+    .deal-img-wrap { height: 90px; padding: 0.5rem; }
+    .deal-body { padding: 0.5rem; gap: 0.3rem; }
+    .deal-store-badge { font-size: 0.6rem; padding: 0.15rem 0.4rem; }
+    .deal-name { font-size: 0.7rem; -webkit-line-clamp: 2; }
+    .deal-price { font-size: 0.9rem; }
+    .deal-currency { font-size: 0.65rem; }
+    .deal-offer-tag { font-size: 0.55rem; padding: 0.1rem 0.35rem; }
+    .deal-price-strike { font-size: 0.7rem; }
+    .deal-promo-label { font-size: 0.6rem; }
+    .deal-buy-btn { font-size: 0.65rem; padding: 0.25rem 0.6rem; }
+    .deal-unit-price { font-size: 0.6rem; }
+    .deals-count-badge { font-size: 0.65rem; }
+    .deals-load-more { font-size: 0.8rem; padding: 0.5rem 1.2rem; }
+    .deal-type-badge { font-size: 0.55rem; }
+
+    .results-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 0.75rem; }
+    .results-header h2 { font-size: 1rem; }
+    .badge { font-size: 0.75rem; }
+    .sort-indicator { font-size: 0.65rem; padding: 0.2rem 0.5rem; }
+    .card-image-wrapper { height: 100px; padding: 0.6rem; }
+    .card-content { padding: 0.6rem; }
+    .card-meta-row { margin-bottom: 0.4rem; }
+    .store-badge { font-size: 0.6rem; padding: 0.15rem 0.4rem; }
+    .product-name { font-size: 0.75rem; height: 2.2rem; margin-bottom: 0.5rem; }
+    .price-row { margin-bottom: 0.5rem; }
+    .price-value { font-size: 1rem; }
+    .price-currency { font-size: 0.6rem; }
+    .buy-btn { font-size: 0.7rem; padding: 0.4rem; }
+    .basket-btn { width: 28px; height: 28px; font-size: 0.7rem; }
+    .favorite-btn { font-size: 0.9rem; }
+    .offer-badge { font-size: 0.6rem; padding: 0.15rem 0.4rem; }
+    .promo-price-tag { font-size: 0.65rem; }
+    .price-value-strikethrough { font-size: 0.85rem; }
+
+    .basket-toggle { bottom: 0.8rem; left: 0.8rem; width: 46px; height: 46px; }
+    .basket-count { width: 18px; height: 18px; font-size: 0.65rem; }
+    .basket-drawer { width: 100%; left: -100%; }
+    .basket-header { padding: 1rem; }
+    .basket-header h3 { font-size: 1.1rem; }
+    .basket-body { padding: 1rem; }
+    
+    .modal-container { width: 95%; }
+    .modal-image-wrapper { padding: 1rem; }
+    .modal-content-panel { padding: 1rem; }
+    .modal-title { font-size: 1rem; }
+    .modal-price-value { font-size: 1.2rem; }
+    .modal-price-label { font-size: 0.75rem; }
+    .modal-image { max-height: 150px; }
+    
+    .footer { font-size: 0.75rem; padding-top: 2rem; }
+    .splash-logo { font-size: 3rem; }
+    .splash-title { font-size: 1.8rem; }
+    .splash-sub { font-size: 0.85rem; }
 }
 
 /* Quantity controls in Basket */

@@ -1,4 +1,11 @@
 document.addEventListener('DOMContentLoaded', () => {
+    // Hide splash screen
+    const splash = document.getElementById('splash-screen');
+    if (splash) {
+        splash.classList.add('hidden');
+        setTimeout(() => splash.remove(), 700);
+    }
+
     // DOM Elements
     const searchForm           = document.getElementById('search-form');
     const searchInput          = document.getElementById('search-input');
