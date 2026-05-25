@@ -1394,48 +1394,114 @@ document.addEventListener('DOMContentLoaded', () => {
             { name: 'المتحدة', key: 'United Pharmacy', class: 'store-united' }
         ];
 
+        let missingCount = 0;
+        const storeResults = {};
         storeConfigs.forEach((config) => {
-            // Skip the store of the current product
             if (item.store === config.key) return;
-
             let targets = allResults.filter(r => r.store === config.key);
             if (targets.length === 0) {
                 targets = dealsData.filter(r => r.store === config.key);
             }
             const equiv = findEquivalent(item, targets);
-
-            const div = document.createElement('div');
-            div.className = 'equivalent-row';
-
-            if (equiv) {
-                const eqRegPrice = parseFloat(equiv.price);
-                const eqPromoInfo = getPromoInfo(eqRegPrice, equiv.offer);
-                let displayPrice = eqRegPrice;
-                let priceNote = '';
-
-                if (eqPromoInfo && eqPromoInfo.type === 'bundle' && eqPromoInfo.unitPrice < eqRegPrice) {
-                    displayPrice = eqPromoInfo.unitPrice;
-                    priceNote = `<span style="font-size:0.7rem; color:#34d399;">(بالعرض)</span>`;
-                } else if (eqPromoInfo && eqPromoInfo.type === 'delivery' && eqPromoInfo.deliveryPrice < eqRegPrice) {
-                    priceNote = `<span style="font-size:0.7rem; color:#38bdf8;">🚚 ${eqPromoInfo.deliveryPrice.toFixed(2)} للتوصيل</span>`;
-                }
-
-                div.innerHTML = `
-                    <span class="eq-store-name"><span class="store-badge ${config.class}">${config.name}</span></span>
-                    <span class="eq-price">
-                        ${displayPrice.toFixed(2)} SAR 
-                        ${priceNote}
-                    </span>
-                    <a href="${equiv.link}" target="_blank" rel="noopener noreferrer" class="eq-link">عرض 🔗</a>
-                `;
-            } else {
-                div.innerHTML = `
-                    <span class="eq-store-name"><span class="store-badge ${config.class}">${config.name}</span></span>
-                    <span class="eq-missing">غير متوفر في نتائج هذا البحث</span>
-                `;
-            }
-            modalEquivalentsList.appendChild(div);
+            storeResults[config.key] = equiv || null;
+            if (!equiv) missingCount++;
         });
+
+        // Render equivalants rows
+        function renderEquivalents(results) {
+            modalEquivalentsList.innerHTML = '';
+            storeConfigs.forEach((config) => {
+                if (item.store === config.key) return;
+                const equiv = results[config.key] || null;
+                const div = document.createElement('div');
+                div.className = 'equivalent-row';
+                if (equiv) {
+                    const eqRegPrice = parseFloat(equiv.price);
+                    const eqPromoInfo = getPromoInfo(eqRegPrice, equiv.offer);
+                    let displayPrice = eqRegPrice;
+                    let priceNote = '';
+                    if (eqPromoInfo && eqPromoInfo.type === 'bundle' && eqPromoInfo.unitPrice < eqRegPrice) {
+                        displayPrice = eqPromoInfo.unitPrice;
+                        priceNote = `<span style="font-size:0.7rem; color:#34d399;">(بالعرض)</span>`;
+                    } else if (eqPromoInfo && eqPromoInfo.type === 'delivery' && eqPromoInfo.deliveryPrice < eqRegPrice) {
+                        priceNote = `<span style="font-size:0.7rem; color:#38bdf8;">🚚 ${eqPromoInfo.deliveryPrice.toFixed(2)} للتوصيل</span>`;
+                    }
+                    div.innerHTML = `
+                        <span class="eq-store-name"><span class="store-badge ${config.class}">${config.name}</span></span>
+                        <span class="eq-price">${displayPrice.toFixed(2)} SAR ${priceNote}</span>
+                        <a href="${equiv.link}" target="_blank" rel="noopener noreferrer" class="eq-link">عرض 🔗</a>
+                    `;
+                } else {
+                    div.innerHTML = `
+                        <span class="eq-store-name"><span class="store-badge ${config.class}">${config.name}</span></span>
+                        <span class="eq-missing">غير متوفر في نتائج هذا البحث</span>
+                    `;
+                }
+                modalEquivalentsList.appendChild(div);
+            });
+        }
+
+        renderEquivalents(storeResults);
+
+        // If some stores missing, auto-search for equivalants via brand
+        if (missingCount > 0) {
+            const brand = getTokens(item.name)[0];
+            if (brand) {
+                // Show searching message
+                storeConfigs.forEach((config) => {
+                    if (item.store === config.key) return;
+                    if (!storeResults[config.key]) {
+                        const row = modalEquivalentsList.querySelector(`.eq-store-name .store-badge.${config.class}`);
+                        if (row) {
+                            const parentRow = row.closest('.equivalent-row');
+                            if (parentRow) {
+                                parentRow.querySelector('.eq-missing').textContent = 'جاري البحث...';
+                            }
+                        }
+                    }
+                });
+                // Silent fetch search results
+                (async () => {
+                    try {
+                        const resp = await fetch(`/api/search?q=${encodeURIComponent(brand)}`);
+                        const reader = resp.body.getReader();
+                        const decoder = new TextDecoder();
+                        let buf = '';
+                        let found = false;
+                        while (true) {
+                            const { done, value } = await reader.read();
+                            if (done) break;
+                            buf += decoder.decode(value, { stream: true });
+                            const lines = buf.split('\n\n');
+                            buf = lines.pop();
+                            for (const line of lines) {
+                                const data = line.replace(/^data: /, '').trim();
+                                if (!data || data === 'DONE') continue;
+                                try {
+                                    const parsed = JSON.parse(data);
+                                    if (parsed.results && parsed.results.length > 0) {
+                                        const newTargets = parsed.results;
+                                        storeConfigs.forEach((config) => {
+                                            if (item.store === config.key) return;
+                                            if (!storeResults[config.key]) {
+                                                const eq = findEquivalent(item, newTargets);
+                                                if (eq) {
+                                                    storeResults[config.key] = eq;
+                                                    found = true;
+                                                }
+                                            }
+                                        });
+                                    }
+                                } catch (_) {}
+                            }
+                        }
+                        if (found) {
+                            renderEquivalents(storeResults);
+                        }
+                    } catch (_) {}
+                })();
+            }
+        }
 
         productModal.classList.add('open');
     }
