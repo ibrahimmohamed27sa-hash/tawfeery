@@ -4,17 +4,76 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="referrer" content="no-referrer" />
-    <title>Tawfeery - توفيري | Pharmacy Price Comparison</title>
-    <meta name="description" content="Compare prices for medications across United Pharmacy, Nahdi Online, and Al-Dawaa to find the best deals.">
-    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+
+    <!-- Primary Meta -->
+    <title>توفيري Tawfeery - قارن أسعار الأدوية والصيدليات في السعودية</title>
+    <meta name="description" content="قارن أسعار الأدوية والمنتجات الصحية بين صيدليات النهدي والدواء والمتحدة. اعثر على أفضل سعر ووفر المال مع توفيري.">
+    <meta name="keywords" content="مقارنة أسعار الأدوية, صيدلية النهدي, صيدلية الدواء, الصيدلية المتحدة, أسعار الأدوية السعودية, توفيري, Tawfeery">
+    <meta name="robots" content="index, follow">
+    <meta name="author" content="Tawfeery">
+    <link rel="canonical" href="{{ request.url }}">
     <meta name="theme-color" content="#10b981">
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="توفيري Tawfeery - قارن أسعار الأدوية والصيدليات">
+    <meta property="og:description" content="قارن أسعار الأدوية بين صيدليات النهدي والدواء والمتحدة واعثر على أفضل سعر.">
+    <meta property="og:url" content="{{ request.url }}">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="توفيري Tawfeery">
+    <meta property="og:locale" content="ar_SA">
+    <meta property="og:image" content="{{ url_for('static', filename='icon.svg', _external=True) }}">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="توفيري Tawfeery - قارن أسعار الأدوية">
+    <meta name="twitter:description" content="قارن أسعار الأدوية بين صيدليات السعودية واعثر على أفضل سعر.">
+
+    <!-- PWA -->
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="توفيري">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='icon.svg') }}">
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+
+    <!-- Preconnect for performance -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+
+    <!-- Structured Data: Organization -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "Organization",
+        "name": "توفيري Tawfeery",
+        "url": "{{ request.url_root.rstrip('/') }}",
+        "logo": "{{ url_for('static', filename='icon.svg', _external=True) }}",
+        "description": "منصة مقارنة أسعار الأدوية والمنتجات الصحية في السعودية",
+        "areaServed": "SA",
+        "slogan": "اعثر على أفضل سعر لدوائك"
+    }
+    </script>
+
+    <!-- Structured Data: WebSite with SearchAction -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": "توفيري Tawfeery",
+        "url": "{{ request.url_root.rstrip('/') }}",
+        "potentialAction": {
+            "@type": "SearchAction",
+            "target": {
+                "@type": "EntryPoint",
+                "urlTemplate": "{{ request.url_root.rstrip('/') }}/api/search?q={search_term_string}"
+            },
+            "query-input": "required name=search_term_string"
+        },
+        "inLanguage": "ar-SA"
+    }
+    </script>
 </head>
 <body>
     <div id="splash-screen" class="splash-screen">

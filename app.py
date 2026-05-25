@@ -556,6 +556,17 @@ def _refresh_deals():
             print(f"Deals refresh error: {e}")
 
 
+# ── SEO Endpoints ─────────────────────────────────────────────────────────────
+
+@app.route('/robots.txt')
+def robots_txt():
+    return Response(render_template('robots.txt'), mimetype='text/plain')
+
+@app.route('/sitemap.xml')
+def sitemap_xml():
+    return Response(render_template('sitemap.xml'), mimetype='application/xml')
+
+
 # ── Admin / Analytics Dashboard ───────────────────────────────────────────────
 
 @app.route('/admin')
