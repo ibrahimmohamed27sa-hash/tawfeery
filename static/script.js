@@ -1529,15 +1529,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
                 // Silent fetch search results — try multiple keywords
                 (async () => {
-                    const searchQueries = [brand];
-                    // Add English name queries (more standardized)
+                    const searchQueries = [];
+                    // English name FIRST — more standardized across stores
                     const itemEnTokens = getEnTokens(item.name_en);
                     if (itemEnTokens.length > 0) {
                         searchQueries.push(itemEnTokens.join(' '));
                         if (itemEnTokens.length > 1) {
                             searchQueries.push(itemEnTokens.slice(0, Math.min(3, itemEnTokens.length)).join(' '));
                         }
+                        if (itemEnTokens.length > 2) {
+                            searchQueries.push(itemEnTokens.slice(0, 2).join(' '));
+                        }
                     }
+                    // Then Arabic brand
+                    if (brand) searchQueries.push(brand);
                     // Try first 2-3 tokens as more specific query
                     if (itemTokens.length > 1) {
                         searchQueries.push(itemTokens.slice(0, 2).join(' '));
