@@ -258,6 +258,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const div = document.createElement('div');
         div.className = 'deal-card';
         div.style.animationDelay = `${idx * 0.06}s`;
+        div.addEventListener('click', () => openModal(item));
 
         const hasOffer = !!item.offer;
         if (hasOffer) div.classList.add('has-offer');
@@ -274,7 +275,9 @@ document.addEventListener('DOMContentLoaded', () => {
             ? `<div class="deal-offer-tag">🎁 ${sanitize(item.offer)}</div>`
             : '';
 
-        const badgeLabel = hasOffer ? '🔥 عرض' : '💊 منتج';
+        const badgeLabel = hasOffer ? 'عرض' : 'منتج';
+        const inBasket = basket.some(b => b.link === item.link);
+        const isFav = favorites.some(f => f.link === item.link);
 
         // Price processing — apply promo to effective price
         const regularPrice = parseFloat(item.price);
@@ -318,7 +321,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         div.innerHTML = `
-            <div class="deal-img-wrap">${img}</div>
+            <div class="deal-img-wrap">
+                ${img}
+                <button class="deal-fav-btn ${isFav ? 'active' : ''}" data-action="fav" title="المفضلة">⭐</button>
+            </div>
             <div class="deal-body">
                 <div style="display:flex;justify-content:space-between;align-items:center;">
                     <div class="deal-store-badge ${badgeClass}">${sanitize(item.store)}</div>
@@ -333,10 +339,31 @@ document.addEventListener('DOMContentLoaded', () => {
                         ${promoLabel}
                         ${unitPriceHtml}
                     </div>
-                    <a href="${item.link}" target="_blank" rel="noopener noreferrer" class="deal-buy-btn">عرض</a>
+                    <div class="deal-actions-row">
+                        <button class="deal-basket-btn ${inBasket ? 'in-basket' : ''}" data-action="basket" title="${inBasket ? 'إزالة من المقارنة' : 'إضافة للمقارنة'}">${inBasket ? '🛒✓' : '🛒'}</button>
+                        <a href="${item.link}" target="_blank" rel="noopener noreferrer" class="deal-buy-btn">عرض</a>
+                    </div>
                 </div>
             </div>
         `;
+
+        // Basket button
+        const bskBtn = div.querySelector('.deal-basket-btn');
+        bskBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleBasket(item, bskBtn);
+            bskBtn.textContent = basket.some(b => b.link === item.link) ? '🛒✓' : '🛒';
+            bskBtn.title = basket.some(b => b.link === item.link) ? 'إزالة من المقارنة' : 'إضافة للمقارنة';
+            bskBtn.classList.toggle('in-basket');
+        });
+
+        // Favorite button
+        const favBtn = div.querySelector('.deal-fav-btn');
+        favBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleFavorite(item, favBtn);
+        });
+
         return div;
     }
 
