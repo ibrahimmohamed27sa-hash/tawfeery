@@ -94,6 +94,16 @@
     </script>
 </head>
 <body>
+    <noscript>
+        <div style="padding:2rem;text-align:center;color:#f8fafc;background:#0b0f19;min-height:100vh;font-family:sans-serif;">
+            <h1 style="font-size:2rem;color:#10b981;">توفيري Tawfeery</h1>
+            <p style="font-size:1.2rem;margin:1rem 0;">مقارنة أسعار الأدوية والمنتجات الصحية في السعودية</p>
+            <p>الصيدليات: النهدي، الدواء، المتحدة</p>
+            <p style="margin-top:1rem;">للبحث عن دواء، يرجى تفعيل JavaScript في متصفحك أو زيارة موقع الصيدلية مباشرة.</p>
+            <hr style="max-width:400px;margin:2rem auto;border-color:#1f2937;">
+            <p style="color:#94a3b8;">أدوية مشهورة: بنادول Panadol - فيفادول - بروفين - سولبادين - كلاريتين - جافيسكون - سنتروم - اوميغا 3 - حفاضات</p>
+        </div>
+    </noscript>
     <div id="splash-screen" class="splash-screen">
         <div class="splash-logo">
             <svg width="90" height="90" viewBox="0 0 512 512">
@@ -162,6 +172,7 @@
                         class="search-input" 
                         placeholder="ابحث عن دواء (مثال: Panadol, فيفادول)..." 
                         autocomplete="off"
+                        value="{{ search_query }}"
                         required
                     >
                     <button type="submit" class="search-btn">
@@ -175,11 +186,11 @@
                 <!-- Quick pills & History chips -->
                 <div class="search-chips">
                     <span class="chip-label">بحث سريع:</span>
-                    <button class="quick-pill" data-query="Panadol">💊 بنادول</button>
-                    <button class="quick-pill" data-query="فيفادول">💊 فيفادول</button>
-                    <button class="quick-pill" data-query="سولبادين">💊 سولبادين</button>
-                    <button class="quick-pill" data-query="جافيسكون">💊 جافيسكون</button>
-                    <button class="quick-pill" data-query="كلاريتين">💊 كلاريتين</button>
+                    <a href="/?q=Panadol" class="quick-pill" data-query="Panadol">💊 بنادول</a>
+                    <a href="/?q=فيفادول" class="quick-pill" data-query="فيفادول">💊 فيفادول</a>
+                    <a href="/?q=سولبادين" class="quick-pill" data-query="سولبادين">💊 سولبادين</a>
+                    <a href="/?q=جافيسكون" class="quick-pill" data-query="جافيسكون">💊 جافيسكون</a>
+                    <a href="/?q=كلاريتين" class="quick-pill" data-query="كلاريتين">💊 كلاريتين</a>
                 </div>
                 <div id="search-history-container" class="search-chips hidden" style="margin-top: 0.6rem;">
                     <span class="chip-label">سجل البحث:</span>
@@ -197,7 +208,8 @@
                 <div id="deals-grid" class="deals-grid">
                     <!-- Deals injected by JS -->
                 </div>
-                <div id="deals-loading" class="deals-loading">جاري تحميل أفضل العروض...</div>
+                <div id="deals-loading" class="deals-loading">{% if deals %}جاري تحديث العروض...{% else %}جاري تحميل أفضل العروض...{% endif %}</div>
+                <script id="deals-data" type="application/json">{{ deals | tojson | safe }}</script>
             </div>
 
             <!-- Loading State -->
@@ -212,7 +224,7 @@
             </div>
 
             <!-- Results Section -->
-            <div id="results-container" class="results-container hidden">
+            <div id="results-container" class="results-container {% if not search_query %}hidden{% endif %}">
                 <div class="results-header">
                     <h2>نتائج البحث <span id="results-count" class="badge">0</span></h2>
                     <div class="sort-indicator">الترتيب: الأقل سعراً أولاً</div>
@@ -222,6 +234,7 @@
                     <!-- Results will be injected here by JS -->
                 </div>
             </div>
+            <script id="search-results-data" type="application/json">{{ search_results | tojson | safe }}</script>
         </main>
 
         <!-- Footer -->

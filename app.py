@@ -425,7 +425,16 @@ def scrape_aldawaa(query):
 @app.route('/')
 def index():
     cache.track_visit(client_ip(), 'home', user_agent=request.headers.get('User-Agent', ''), referrer=request.headers.get('Referer', ''))
-    return render_template('index.html')
+    deals_data = cache.get_deals_cache()
+    deals = deals_data[0] if deals_data and deals_data[0] else []
+    search_query = sanitize_query(request.args.get('q', ''))
+    search_results = {}
+    if search_query:
+        for store in ['Nahdi Online', 'United Pharmacy', 'Al-Dawaa']:
+            cached = cache.get_search_cache(search_query, store, max_age=600)
+            if cached is not None:
+                search_results[store] = cached
+    return render_template('index.html', deals=deals, search_query=search_query, search_results=search_results)
 
 
 @app.route('/api/search')

@@ -147,9 +147,56 @@ document.addEventListener('DOMContentLoaded', () => {
     updateBasketUI();
     fetchDeals();
 
+    // Auto-search if query param pre-populated search input and server has results
+    const initialQuery = searchInput.value.trim();
+    const serverResultsEl = document.getElementById('search-results-data');
+    if (initialQuery && serverResultsEl) {
+        try {
+            const ssResults = JSON.parse(serverResultsEl.textContent);
+            const hasAny = Object.values(ssResults).some(r => r && r.length > 0);
+            if (hasAny) {
+                allResults = [];
+                Object.entries(ssResults).forEach(([store, items]) => {
+                    if (items && items.length > 0) {
+                        items.forEach(item => {
+                            item.store = store;
+                            allResults.push(item);
+                        });
+                    }
+                });
+                allResults.sort((a, b) => (a.unit_price || a.price) - (b.unit_price || b.price));
+                dealsSection.style.display = 'none';
+                resultsContainer.classList.remove('hidden');
+                loadingState.classList.add('hidden');
+                resultsGrid.innerHTML = '';
+                allResults.forEach((item, idx) => {
+                    const card = buildCard(item, idx);
+                    resultsGrid.appendChild(card);
+                });
+                resultsCount.textContent = allResults.length;
+                return;
+            }
+        } catch (_) {}
+        // Fallback: perform normal search
+        performSearch(initialQuery);
+    }
+
     // ── BEST DEALS LOGIC ─────────────────────────────────────────────────────
 
     async function fetchDeals(retries = 60) {
+        // Use server-rendered deals if available
+        const serverDealsEl = document.getElementById('deals-data');
+        if (serverDealsEl) {
+            try {
+                const parsed = JSON.parse(serverDealsEl.textContent);
+                if (parsed && parsed.length > 0) {
+                    dealsData = parsed;
+                    dealsLoading.style.display = 'none';
+                    renderDealsChunk();
+                    return;
+                }
+            } catch (_) {}
+        }
         for (let attempt = 0; attempt < retries; attempt++) {
             try {
                 const controller = new AbortController();
