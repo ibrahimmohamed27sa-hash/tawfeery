@@ -1530,6 +1530,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Silent fetch search results — try multiple keywords
                 (async () => {
                     const searchQueries = [brand];
+                    // Add English name queries (more standardized)
+                    const itemEnTokens = getEnTokens(item.name_en);
+                    if (itemEnTokens.length > 0) {
+                        searchQueries.push(itemEnTokens.join(' '));
+                        if (itemEnTokens.length > 1) {
+                            searchQueries.push(itemEnTokens.slice(0, Math.min(3, itemEnTokens.length)).join(' '));
+                        }
+                    }
                     // Try first 2-3 tokens as more specific query
                     if (itemTokens.length > 1) {
                         searchQueries.push(itemTokens.slice(0, 2).join(' '));
