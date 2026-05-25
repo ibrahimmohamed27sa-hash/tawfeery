@@ -1,4 +1,59 @@
 document.addEventListener('DOMContentLoaded', () => {
+    // PWA: Service Worker + Install Prompt
+    let deferredPrompt = null;
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/static/sw.js');
+    }
+    window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferredPrompt = e;
+        // Show install banner after 3 seconds
+        setTimeout(() => showInstallBanner(), 3000);
+    });
+    function showInstallBanner() {
+        if (!deferredPrompt) return;
+        const existing = document.querySelector('.pwa-install-banner');
+        if (existing) return;
+        const banner = document.createElement('div');
+        banner.className = 'pwa-install-banner';
+        banner.innerHTML = `
+            <div class="pwa-install-icon">⚕️</div>
+            <div class="pwa-install-text">
+                <strong>ثبّت تطبيق توفيري</strong>
+                <span>أضف للمنزل للوصول السريع</span>
+            </div>
+            <button class="pwa-install-btn">تثبيت</button>
+            <button class="pwa-dismiss-btn">&times;</button>
+        `;
+        document.body.appendChild(banner);
+        banner.querySelector('.pwa-install-btn').addEventListener('click', async () => {
+            deferredPrompt.prompt();
+            const result = await deferredPrompt.userChoice;
+            if (result.outcome === 'accepted') banner.remove();
+            deferredPrompt = null;
+        });
+        banner.querySelector('.pwa-dismiss-btn').addEventListener('click', () => banner.remove());
+    }
+    // iOS fallback: detect standalone mode
+    if (window.navigator.standalone === false && /iPad|iPhone|iPod/.test(navigator.userAgent)) {
+        setTimeout(() => {
+            const existing = document.querySelector('.pwa-install-banner');
+            if (existing) return;
+            const banner = document.createElement('div');
+            banner.className = 'pwa-install-banner';
+            banner.innerHTML = `
+                <div class="pwa-install-icon">⚕️</div>
+                <div class="pwa-install-text">
+                    <strong>توفيري</strong>
+                    <span>أضف للمنزل: زر المشاركة ← أضف للشاشة الرئيسية</span>
+                </div>
+                <button class="pwa-dismiss-btn">&times;</button>
+            `;
+            document.body.appendChild(banner);
+            banner.querySelector('.pwa-dismiss-btn').addEventListener('click', () => banner.remove());
+        }, 5000);
+    }
+
     // Hide splash screen
     const splash = document.getElementById('splash-screen');
     if (splash) {

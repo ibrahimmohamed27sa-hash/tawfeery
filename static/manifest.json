@@ -1,0 +1,20 @@
+{
+  "name": "توفيري - Tawfeery",
+  "short_name": "توفيري",
+  "description": "مقارنة أسعار الأدوية بين صيدليات السعودية",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b0f19",
+  "theme_color": "#10b981",
+  "orientation": "portrait",
+  "dir": "rtl",
+  "lang": "ar-SA",
+  "icons": [
+    {
+      "src": "/static/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
