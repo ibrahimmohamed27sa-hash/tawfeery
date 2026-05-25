@@ -1463,11 +1463,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Silent fetch search results
                 (async () => {
                     try {
-                        const resp = await fetch(`/api/search?q=${encodeURIComponent(brand)}`);
+                        const controller = new AbortController();
+                        const timeoutId = setTimeout(() => controller.abort(), 30000);
+                        const resp = await fetch(`/api/search?q=${encodeURIComponent(brand)}`, { signal: controller.signal });
+                        clearTimeout(timeoutId);
+                        if (!resp.ok) throw new Error('search failed');
                         const reader = resp.body.getReader();
                         const decoder = new TextDecoder();
                         let buf = '';
-                        let found = false;
                         while (true) {
                             const { done, value } = await reader.read();
                             if (done) break;
@@ -1487,7 +1490,6 @@ document.addEventListener('DOMContentLoaded', () => {
                                                 const eq = findEquivalent(item, storeTargets);
                                                 if (eq) {
                                                     storeResults[config.key] = eq;
-                                                    found = true;
                                                 }
                                             }
                                         });
@@ -1495,10 +1497,8 @@ document.addEventListener('DOMContentLoaded', () => {
                                 } catch (_) {}
                             }
                         }
-                        if (found) {
-                            renderEquivalents(storeResults);
-                        }
                     } catch (_) {}
+                    renderEquivalents(storeResults);
                 })();
             }
         }
