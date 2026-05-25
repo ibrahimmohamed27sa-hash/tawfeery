@@ -1523,9 +1523,22 @@ document.addEventListener('DOMContentLoaded', () => {
                             searchQueries.push(itemTokens[i]);
                         }
                     }
+                    // Try quantity + each keyword individually
+                    if (itemQty > 0) {
+                        for (const t of itemTokens) {
+                            if (t !== brand && t.length > 2) {
+                                searchQueries.push(`${itemQty} ${t}`);
+                            }
+                        }
+                    }
                     // Deduplicate
                     const uniqueQueries = [...new Set(searchQueries)];
 
+                    // If very few queries, add a broad fallback
+                    if (uniqueQueries.length <= 3 && itemTokens.length > 0) {
+                        // Try all tokens joined (full name without stop words)
+                        uniqueQueries.push(itemTokens.join(' '));
+                    }
                     for (const q of uniqueQueries) {
                         const stillMissing = storeConfigs.some(c => c.key !== item.store && !storeResults[c.key]);
                         if (!stillMissing) break;
