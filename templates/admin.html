@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>لوحة التحكم - Tawfeery</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0b0f19;
+            --card: #141b2d;
+            --primary: #10b981;
+            --text: #f8fafc;
+            --muted: #94a3b8;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Tajawal', 'Inter', sans-serif; background: var(--bg); color: var(--text); padding: 2rem; min-height: 100vh; }
+        h1 { font-size: 1.8rem; margin-bottom: 0.3rem; }
+        .sub { color: var(--muted); margin-bottom: 2rem; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
+        .card { background: var(--card); border: 1px solid rgba(255,255,255,0.06); border-radius: 16px; padding: 1.5rem; }
+        .card .num { font-size: 2.2rem; font-weight: 800; color: var(--primary); }
+        .card .label { font-size: 0.85rem; color: var(--muted); margin-top: 0.3rem; }
+        h2 { font-size: 1.2rem; margin: 1.5rem 0 1rem; color: var(--text); }
+        table { width: 100%; border-collapse: collapse; background: var(--card); border-radius: 12px; overflow: hidden; }
+        th, td { padding: 0.7rem 1rem; text-align: right; font-size: 0.85rem; border-bottom: 1px solid rgba(255,255,255,0.04); }
+        th { background: rgba(255,255,255,0.03); color: var(--muted); font-weight: 600; }
+        td { color: var(--text); }
+        .ip { font-family: 'Inter', monospace; font-size: 0.8rem; color: var(--muted); }
+        .query-badge { background: rgba(16,185,129,0.1); color: var(--primary); padding: 0.15rem 0.6rem; border-radius: 12px; font-size: 0.8rem; }
+        .nav { display: flex; gap: 1rem; margin-bottom: 2rem; }
+        .nav a { color: var(--muted); text-decoration: none; font-size: 0.9rem; padding: 0.3rem 0.8rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.06); }
+        .nav a:hover { border-color: var(--primary); color: var(--primary); }
+        @media (max-width: 600px) {
+            body { padding: 1rem; }
+            .grid { grid-template-columns: repeat(2, 1fr); }
+            .card .num { font-size: 1.6rem; }
+            table { font-size: 0.75rem; }
+            th, td { padding: 0.5rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <a href="/">← العودة للموقع</a>
+        <a href="/admin" style="border-color: var(--primary); color: var(--primary);">لوحة التحكم</a>
+    </div>
+
+    <h1>📊 لوحة تحكم Tawfeery</h1>
+    <p class="sub">إحصائيات الزوار والبحث</p>
+
+    <div class="grid">
+        <div class="card">
+            <div class="num">{{ stats.today_visits or 0 }}</div>
+            <div class="label">زيارات اليوم</div>
+        </div>
+        <div class="card">
+            <div class="num">{{ stats.today_searches or 0 }}</div>
+            <div class="label">عمليات بحث اليوم</div>
+        </div>
+        <div class="card">
+            <div class="num">{{ stats.today_ips or 0 }}</div>
+            <div class="label">زوار فريدون اليوم</div>
+        </div>
+        <div class="card">
+            <div class="num">{{ stats.total_ips or 0 }}</div>
+            <div class="label">إجمالي الزوار الفريدين</div>
+        </div>
+        <div class="card">
+            <div class="num">{{ stats.total_visits or 0 }}</div>
+            <div class="label">إجمالي الزيارات</div>
+        </div>
+        <div class="card">
+            <div class="num">{{ stats.total_searches or 0 }}</div>
+            <div class="label">إجمالي عمليات البحث</div>
+        </div>
+    </div>
+
+    <h2>🔝 أكثر الكلمات بحثاً اليوم</h2>
+    <table>
+        <tr><th>#</th><th>الكلمة</th><th>عدد</th></tr>
+        {% for q in (stats.top_queries or []) %}
+        <tr><td>{{ loop.index }}</td><td><span class="query-badge">{{ q.query }}</span></td><td>{{ q.count }}</td></tr>
+        {% endfor %}
+        {% if not stats.top_queries %}<tr><td colspan="3" style="text-align:center;color:var(--muted);">لا توجد بيانات بعد</td></tr>{% endif %}
+    </table>
+
+    <h2>🕐 آخر عمليات البحث</h2>
+    <table>
+        <tr><th>الكلمة</th><th>IP</th><th>منذ</th></tr>
+        {% for s in (stats.recent_searches or []) %}
+        <tr>
+            <td><span class="query-badge">{{ s.query }}</span></td>
+            <td class="ip">{{ s.ip }}</td>
+            <td>{{ (s.time | string)[:19] }}</td>
+        </tr>
+        {% endfor %}
+        {% if not stats.recent_searches %}<tr><td colspan="3" style="text-align:center;color:var(--muted);">لا توجد بيانات بعد</td></tr>{% endif %}
+    </table>
+
+    <h2>📅 آخر 7 أيام</h2>
+    <table>
+        <tr><th>اليوم</th><th>زيارات</th><th>عمليات بحث</th></tr>
+        {% for d in (stats.daily or []) %}
+        <tr><td>{{ d.date }}</td><td>{{ d.visits }}</td><td>{{ d.searches }}</td></tr>
+        {% endfor %}
+        {% if not stats.daily %}<tr><td colspan="3" style="text-align:center;color:var(--muted);">لا توجد بيانات بعد</td></tr>{% endif %}
+    </table>
+
+    <h2>🖥️ آخر الزوار</h2>
+    <table>
+        <tr><th>IP</th><th>الصفحة</th><th>نص البحث</th><th>المتصفح</th></tr>
+        {% for v in (stats.recent_visits or []) %}
+        <tr>
+            <td class="ip">{{ v.ip }}</td>
+            <td>{{ v.page }}</td>
+            <td>{% if v.query %}<span class="query-badge">{{ v.query }}</span>{% endif %}</td>
+            <td style="font-size:0.75rem;color:var(--muted);">{{ v.ua[:40] }}</td>
+        </tr>
+        {% endfor %}
+        {% if not stats.recent_visits %}<tr><td colspan="4" style="text-align:center;color:var(--muted);">لا توجد بيانات بعد</td></tr>{% endif %}
+    </table>
+</body>
+</html>

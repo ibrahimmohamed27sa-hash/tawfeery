@@ -390,6 +390,7 @@ def scrape_aldawaa(query):
 
 @app.route('/')
 def index():
+    cache.track_visit(client_ip(), 'home', user_agent=request.headers.get('User-Agent', ''), referrer=request.headers.get('Referer', ''))
     return render_template('index.html')
 
 
@@ -398,6 +399,9 @@ def search():
     query = request.args.get('q', '').strip()
     if not query:
         return Response("data: DONE\n\n", mimetype='text/event-stream')
+
+    # Track search
+    cache.track_visit(client_ip(), 'search', query=query, user_agent=request.headers.get('User-Agent', ''))
 
     # Rate limiting
     ip = client_ip()
@@ -479,6 +483,7 @@ _deals_refreshing_lock = threading.Lock()
 @app.route('/api/deals')
 def deals():
     ip = client_ip()
+    cache.track_visit(ip, 'deals', user_agent=request.headers.get('User-Agent', ''))
     if not check_rate(ip, 'deals', 10, 60):
         return Response(json.dumps({'error': 'rate_limit'}, ensure_ascii=False), mimetype='application/json')
 
@@ -549,6 +554,19 @@ def _refresh_deals():
 
         except Exception as e:
             print(f"Deals refresh error: {e}")
+
+
+# ── Admin / Analytics Dashboard ───────────────────────────────────────────────
+
+@app.route('/admin')
+def admin_dashboard():
+    stats = cache.get_analytics_summary()
+    return render_template('admin.html', stats=stats)
+
+@app.route('/api/admin/stats')
+def admin_stats_api():
+    stats = cache.get_analytics_summary()
+    return Response(json.dumps(stats, ensure_ascii=False), mimetype='application/json')
 
 
 # Pre-warm deals cache on startup
