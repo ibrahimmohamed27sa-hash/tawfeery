@@ -1268,6 +1268,20 @@ document.addEventListener('DOMContentLoaded', () => {
         return parseInt(item.quantity) || 0;
     }
 
+    function getItemBrand(item) {
+        return (item.brand || item.manufacturer || '').toLowerCase().replace(/ـ/g, '');
+    }
+
+    function getEnTokens(name) {
+        if (!name) return [];
+        return name.toLowerCase()
+            .replace(/[/\-_,.()]+/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .split(' ')
+            .filter(t => t.length > 1 && !['for', 'the', 'and', 'with', 'by', 'in', 'of', 'to', 'plus', 'all'].includes(t));
+    }
+
     // Character-level Jaccard similarity for fuzzy brand matching
     function brandSimilarity(a, b) {
         if (!a || !b) return 0;
@@ -1281,6 +1295,20 @@ document.addEventListener('DOMContentLoaded', () => {
         return union > 0 ? intersection / union : 0;
     }
 
+    function tokenScore(tokensA, tokensB) {
+        if (tokensA.length === 0 || tokensB.length === 0) return 0;
+        let intersection = 0;
+        for (const t of tokensA) {
+            if (tokensB.includes(t)) intersection++;
+        }
+        if (intersection === 0) return 0;
+        const unionSize = new Set([...tokensA, ...tokensB]).size;
+        const jaccard = unionSize > 0 ? intersection / unionSize : 0;
+        const minLen = Math.min(tokensA.length, tokensB.length);
+        const overlap = minLen > 0 ? intersection / minLen : 0;
+        return (jaccard * 0.35) + (overlap * 0.65);
+    }
+
     function findEquivalent(item, otherStoreResults) {
         // 1. Exact SKU match
         if (item.sku) {
@@ -1288,88 +1316,88 @@ document.addEventListener('DOMContentLoaded', () => {
             if (bySku) return bySku;
         }
 
+        // 2. GTIN/barcode match (from Nahdi)
+        if (item.gtin) {
+            const byGtin = otherStoreResults.find(c => c.gtin && c.gtin === item.gtin);
+            if (byGtin) return byGtin;
+        }
+
         let bestMatch = null;
         let highestScore = 0;
 
         const itemTokens = getTokens(item.name);
-        if (itemTokens.length === 0) return null;
-
-        const brand = itemTokens[0];
+        const itemEnTokens = getEnTokens(item.name_en);
+        const itemBrand = getItemBrand(item);
         const itemQty = getQty(item);
 
-        // --- Pass 1: brand match + qty + token overlap ---
+        if (itemTokens.length === 0 && itemEnTokens.length === 0) return null;
+
         for (const candidate of otherStoreResults) {
             const candidateTokens = getTokens(candidate.name);
-            if (candidateTokens.length === 0) continue;
-
-            // Multi-level brand check:
-            //   a) Exact token match (first token)
-            //   b) Brand present as token
-            //   c) Substring match
-            //   d) Character-level similarity > 60%
-            const firstToken = candidateTokens[0];
-            let brandOk = firstToken === brand || candidateTokens.includes(brand)
-                || brand.includes(firstToken) || firstToken.includes(brand)
-                || brandSimilarity(brand, firstToken) > 0.6;
-
-            // Also check if ANY token pairs have high char similarity
-            if (!brandOk) {
-                for (const ct of candidateTokens) {
-                    if (brandSimilarity(brand, ct) > 0.6) {
-                        brandOk = true;
-                        break;
-                    }
-                }
-            }
-            if (!brandOk) continue;
-
-            // Quantity check
+            const candidateEnTokens = getEnTokens(candidate.name_en);
+            const candidateBrand = getItemBrand(candidate);
             const candidateQty = getQty(candidate);
+
+            if (candidateTokens.length === 0 && candidateEnTokens.length === 0) continue;
+
+            // Quantity check (hard filter when both have it)
             if (itemQty > 0 && candidateQty > 0 && itemQty !== candidateQty) continue;
 
-            // Token intersection
-            let intersection = 0;
-            for (const t of itemTokens) {
-                if (candidateTokens.includes(t)) intersection++;
+            // --- Compute English name score ---
+            let enScore = 0;
+            if (itemEnTokens.length > 0 && candidateEnTokens.length > 0) {
+                enScore = tokenScore(itemEnTokens, candidateEnTokens);
             }
-            if (intersection === 0) continue;
 
-            const unionSize = new Set([...itemTokens, ...candidateTokens]).size;
-            const jaccard = unionSize > 0 ? intersection / unionSize : 0;
-            const minLen = Math.min(itemTokens.length, candidateTokens.length);
-            const overlap = minLen > 0 ? intersection / minLen : 0;
-            const score = (jaccard * 0.4) + (overlap * 0.6);
-
-            if (score > highestScore && score >= 0.45) {
-                highestScore = score;
-                bestMatch = candidate;
+            // --- Compute Arabic name score ---
+            let arScore = 0;
+            if (itemTokens.length > 0 && candidateTokens.length > 0) {
+                arScore = tokenScore(itemTokens, candidateTokens);
             }
-        }
 
-        // --- Pass 2: fallback — no brand check, require qty + strong token overlap ---
-        if (!bestMatch) {
-            for (const candidate of otherStoreResults) {
-                const candidateTokens = getTokens(candidate.name);
-                if (candidateTokens.length === 0) continue;
-
-                const candidateQty = getQty(candidate);
-                if (itemQty > 0 && candidateQty > 0 && itemQty !== candidateQty) continue;
-
-                let intersection = 0;
-                for (const t of itemTokens) {
-                    if (candidateTokens.includes(t)) intersection++;
+            // --- Compute brand/manufacturer bonus ---
+            let brandBonus = 0;
+            if (itemBrand && candidateBrand) {
+                if (itemBrand === candidateBrand) {
+                    brandBonus = 0.3;
+                } else if (itemBrand.includes(candidateBrand) || candidateBrand.includes(itemBrand)) {
+                    brandBonus = 0.2;
+                } else if (brandSimilarity(itemBrand, candidateBrand) > 0.6) {
+                    brandBonus = 0.15;
                 }
-                if (intersection === 0) continue;
+            }
+            // Fallback brand from first tokens (Arabic)
+            if (brandBonus === 0 && itemTokens.length > 0 && candidateTokens.length > 0) {
+                const firstToken = itemTokens[0];
+                const candFirst = candidateTokens[0];
+                if (firstToken === candFirst || firstToken.includes(candFirst) || candFirst.includes(firstToken)) {
+                    brandBonus = 0.15;
+                } else if (brandSimilarity(firstToken, candFirst) > 0.6) {
+                    brandBonus = 0.1;
+                }
+            }
 
-                const unionSize = new Set([...itemTokens, ...candidateTokens]).size;
-                const jaccard = unionSize > 0 ? intersection / unionSize : 0;
-                const minLen = Math.min(itemTokens.length, candidateTokens.length);
-                const overlap = minLen > 0 ? intersection / minLen : 0;
-                const score = (jaccard * 0.4) + (overlap * 0.6);
+            // Combined score: use best of en/ar + brand bonus
+            const bestNameScore = Math.max(enScore, arScore);
+            // If both lang scores are present, also try combined
+            let combinedScore = bestNameScore;
+            if (enScore > 0 && arScore > 0) {
+                combinedScore = Math.max(combinedScore, (enScore + arScore) / 2);
+            }
+            const finalScore = combinedScore + brandBonus;
 
-                // Fallback requires overlap >= 0.6 and jaccard >= 0.4
-                if (score > highestScore && overlap >= 0.6 && jaccard >= 0.4) {
-                    highestScore = score;
+            if (finalScore > highestScore) {
+                // Pass 1: requires brand match + score >= 0.45
+                const hasBrand = (itemBrand && candidateBrand) ||
+                    (itemTokens.length > 0 && candidateTokens.length > 0 &&
+                     (itemTokens[0] === candidateTokens[0] || brandSimilarity(itemTokens[0], candidateTokens[0]) > 0.5));
+                if (hasBrand && finalScore >= 0.45) {
+                    highestScore = finalScore;
+                    bestMatch = candidate;
+                }
+                // Pass 2 (fallback, no brand): requires strong token overlap
+                else if (!hasBrand && combinedScore >= 0.62 && itemQty > 0 && candidateQty > 0 && itemQty === candidateQty) {
+                    highestScore = finalScore;
                     bestMatch = candidate;
                 }
             }

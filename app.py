@@ -175,6 +175,8 @@ def scrape_united(query):
                             offer_text = h.get('offerApplicableLabel', '')
                         
                         sku = h.get('objectID') or h.get('sku') or ''
+                        brand = h.get('brand', '')
+                        name_en = h.get('name_locally_en', '')
                         item = {
                             'store': 'United Pharmacy',
                             'name': name,
@@ -183,6 +185,8 @@ def scrape_united(query):
                             'link': link,
                             'offer': offer_text,
                             'sku': sku,
+                            'brand': brand,
+                            'name_en': name_en,
                         }
                         enrich_item(item, raw_hit=h)
                         results.append(item)
@@ -284,6 +288,15 @@ def scrape_nahdi(query):
                                         offer_text = promo
 
                             sku = h.get('sku', '')
+                            name_en = ''
+                            manufacturer = ''
+                            gtin = ''
+                            if isinstance(h, dict):
+                                store_en = h.get('store_en')
+                                if isinstance(store_en, dict):
+                                    name_en = store_en.get('name', '') or ''
+                                manufacturer = h.get('manufacturer', '') or ''
+                                gtin = h.get('gtin', '') or ''
                             item = {
                                 'store': 'Nahdi Online',
                                 'name': name,
@@ -292,6 +305,9 @@ def scrape_nahdi(query):
                                 'link': link,
                                 'offer': offer_text,
                                 'sku': sku,
+                                'name_en': name_en,
+                                'manufacturer': manufacturer,
+                                'gtin': str(gtin) if gtin else '',
                             }
                             enrich_item(item, raw_hit=h)
                             results.append(item)
@@ -408,6 +424,11 @@ def scrape_aldawaa(query):
                     offer_text = ''
 
                 sku = p.get('code', '')
+                brand = ''
+                brand_data = p.get('brand')
+                if isinstance(brand_data, dict):
+                    brand = brand_data.get('name', '') or ''
+                name_en = p.get('urlProductName', '') or ''
                 item = {
                     'store': 'Al-Dawaa',
                     'name': name,
@@ -416,6 +437,8 @@ def scrape_aldawaa(query):
                     'link': link,
                     'offer': offer_text,
                     'sku': sku,
+                    'brand': brand,
+                    'name_en': name_en,
                 }
                 enrich_item(item, raw_hit=p)
                 results.append(item)
