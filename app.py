@@ -231,7 +231,7 @@ def scrape_nahdi(query):
                                         offer_text = "اشتري 2 واحصل على 1 مجاناً"
                                     elif "1 + 1" in promo:
                                         offer_text = "اشتري 1 واحصل على 1 مجاناً"
-                                    else:
+                                    elif re.search(r'\d+', promo):
                                         offer_text = promo
 
                             item = {
@@ -332,7 +332,10 @@ def scrape_aldawaa(query):
                     if isinstance(desc, list):
                         desc = ' '.join(str(d) for d in desc)
                     if isinstance(desc, str) and desc.strip():
-                        promo_text = desc.strip()[:100]
+                        desc = desc.strip()[:100]
+                        # Only accept as offer if it looks like a real promotion
+                        if any(k in desc.lower() for k in ['%', 'خصم', 'وفر', 'ريال', 'مجان', '1+', '2+', '+1', 'اشتر', 'سعر']):
+                            promo_text = desc
 
                 # Check volume pricing / bulk buy
                 volume = p.get('volumePrices', [])
@@ -473,13 +476,15 @@ def _refresh_deals():
 
         def run_popular(query):
             items = []
-            for scraper_fn in (scrape_united, scrape_nahdi, scrape_aldawaa):
-                try:
-                    results = scraper_fn(query)
-                    if results:
-                        items.extend(results)
-                except Exception:
-                    continue
+            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as _ex:
+                _futs = {_ex.submit(fn, query): fn.__name__ for fn in (scrape_united, scrape_nahdi, scrape_aldawaa)}
+                for _f in concurrent.futures.as_completed(_futs, timeout=45):
+                    try:
+                        r = _f.result()
+                        if r:
+                            items.extend(r)
+                    except Exception:
+                        continue
             return items
 
         def rebuild_cache(all_items):
@@ -501,7 +506,7 @@ def _refresh_deals():
             return offer_items[:300]
 
         all_items = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=6) as ex:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
             futures = {ex.submit(run_popular, q): q for q in POPULAR_QUERIES}
             for f in concurrent.futures.as_completed(futures):
                 try:
