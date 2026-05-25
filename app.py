@@ -7,8 +7,21 @@ import concurrent.futures
 import json
 import re
 import math
+import threading
+import cache
+import time
 
 app = Flask(__name__)
+
+# Rate limiting: max 20 search requests per minute per IP, 10 deals fetches per minute
+def check_rate(ip, endpoint, limit, window=60):
+    allowed = cache.check_rate_limit(ip, endpoint, limit, window)
+    if not allowed:
+        return False
+    return True
+
+def client_ip():
+    return request.headers.get('X-Forwarded-For', request.remote_addr or '127.0.0.1').split(',')[0].strip()
 
 
 # ── Quantity Extraction & Unit Price Normalization ───────────────────────────
@@ -382,10 +395,14 @@ def index():
 
 @app.route('/api/search')
 def search():
-    """Server-Sent Events endpoint — streams results per-pharmacy as they complete."""
     query = request.args.get('q', '').strip()
     if not query:
         return Response("data: DONE\n\n", mimetype='text/event-stream')
+
+    # Rate limiting
+    ip = client_ip()
+    if not check_rate(ip, 'search', 20, 60):
+        return Response("data: " + json.dumps({'error': 'rate_limit', 'message': 'طلبات كثيرة جداً. انتظر دقيقة.'}) + "\n\ndata: DONE\n\n", mimetype='text/event-stream')
 
     def generate():
         scrapers = [
@@ -394,6 +411,20 @@ def search():
             ('Al-Dawaa',        scrape_aldawaa),
         ]
 
+        # Check cache first for each store
+        cached_all = True
+        for name, _ in scrapers:
+            cached = cache.get_search_cache(query, name, max_age=600)
+            if cached is not None:
+                yield f"data: {json.dumps({'store': name, 'results': cached}, ensure_ascii=False)}\n\n"
+            else:
+                cached_all = False
+
+        if cached_all:
+            yield "data: DONE\n\n"
+            return
+
+        # Scrape only stores not cached
         try:
             with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
                 futures = {
@@ -403,13 +434,15 @@ def search():
 
                 for future in concurrent.futures.as_completed(futures, timeout=35):
                     store_name = futures[future]
+                    # Skip if already served from cache
+                    cached = cache.get_search_cache(query, store_name, max_age=600)
+                    if cached is not None:
+                        continue
                     try:
                         results = future.result(timeout=30)
-                        payload = json.dumps(
-                            {'store': store_name, 'results': results},
-                            ensure_ascii=False
-                        )
-                        yield f"data: {payload}\n\n"
+                        # Store in cache
+                        cache.set_search_cache(query, store_name, results)
+                        yield f"data: {json.dumps({'store': store_name, 'results': results}, ensure_ascii=False)}\n\n"
                     except concurrent.futures.TimeoutError:
                         print(f"Timeout [{store_name}]")
                         yield f"data: {json.dumps({'store': store_name, 'results': [], 'error': 'timeout'})}\n\n"
@@ -441,95 +474,85 @@ POPULAR_QUERIES = [
     'كلاريتين', 'جافيسكون', 'حفاضات', 'سنتروم',
     'اوميغا 3', 'عرض'
 ]
-_deals_cache = None
-_deals_cache_time = 0
-_deals_refreshing = False
+_deals_refreshing_lock = threading.Lock()
 
 @app.route('/api/deals')
 def deals():
-    """Returns deals — serves cached data immediately, refreshes in background."""
-    import time
-    import threading
-    global _deals_cache, _deals_cache_time, _deals_refreshing
+    ip = client_ip()
+    if not check_rate(ip, 'deals', 10, 60):
+        return Response(json.dumps({'error': 'rate_limit'}, ensure_ascii=False), mimetype='application/json')
 
-    now = time.time()
-    # Serve cache immediately if available (up to 1 hour stale)
-    if _deals_cache and (now - _deals_cache_time) < 3600:
-        if (now - _deals_cache_time) > 900 and not _deals_refreshing:
-            _deals_refreshing = True
+    data, _ts = cache.get_deals_cache(max_age=3600)
+    if data and len(data) > 0:
+        # Background refresh if stale (>15 min)
+        if time.time() - _ts > 900:
             threading.Thread(target=_refresh_deals, daemon=True).start()
-        return Response(json.dumps(_deals_cache, ensure_ascii=False), mimetype='application/json')
+        return Response(json.dumps(data, ensure_ascii=False), mimetype='application/json')
 
-    # No cache — trigger background refresh, return empty (frontend will retry)
-    if not _deals_refreshing:
-        _deals_refreshing = True
-        threading.Thread(target=_refresh_deals, daemon=True).start()
+    # No cache — trigger refresh
+    threading.Thread(target=_refresh_deals, daemon=True).start()
     return Response(json.dumps([], ensure_ascii=False), mimetype='application/json')
 
 
 def _refresh_deals():
-    """Background refresh of deals cache — populates incrementally."""
-    global _deals_cache, _deals_cache_time, _deals_refreshing
-    import time
-    try:
-        seen_links = set()
+    with _deals_refreshing_lock:
+        # Check if another thread already refreshed
+        data, _ = cache.get_deals_cache(max_age=3600)
+        if data and time.time() - cache.get_deals_cache(max_age=3600)[1] < 120:
+            return
+        try:
+            seen_links = set()
 
-        def run_popular(query):
-            items = []
-            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as _ex:
-                _futs = {_ex.submit(fn, query): fn.__name__ for fn in (scrape_united, scrape_nahdi, scrape_aldawaa)}
-                for _f in concurrent.futures.as_completed(_futs, timeout=45):
+            def run_popular(query):
+                items = []
+                with concurrent.futures.ThreadPoolExecutor(max_workers=3) as _ex:
+                    _futs = {_ex.submit(fn, query): fn.__name__ for fn in (scrape_united, scrape_nahdi, scrape_aldawaa)}
+                    for _f in concurrent.futures.as_completed(_futs, timeout=45):
+                        try:
+                            r = _f.result()
+                            if r:
+                                items.extend(r)
+                        except Exception:
+                            continue
+                return items
+
+            def rebuild_cache(all_items):
+                def item_key(item):
+                    tokens = item['name'].split(' ')
+                    brand = tokens[0].lower().replace('ـ', '') if tokens else ''
+                    qty = item.get('quantity') or ''
+                    return f"{brand}_{qty}"
+                offer_items = []
+                seen_keys = set()
+                for item in all_items:
+                    key = item_key(item)
+                    store_key = f"{item.get('store','')}_{key}"
+                    if item.get('offer') and store_key not in seen_keys:
+                        seen_keys.add(store_key)
+                        offer_items.append(item)
+                offer_items.sort(key=lambda i: i.get('unit_price') or i['price'])
+                return offer_items[:300]
+
+            all_items = []
+            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
+                futures = {ex.submit(run_popular, q): q for q in POPULAR_QUERIES}
+                for f in concurrent.futures.as_completed(futures):
                     try:
-                        r = _f.result()
-                        if r:
-                            items.extend(r)
+                        items = f.result()
+                        for item in items:
+                            if item['link'] not in seen_links:
+                                seen_links.add(item['link'])
+                                all_items.append(item)
+                        cache.set_deals_cache(rebuild_cache(all_items))
                     except Exception:
                         continue
-            return items
 
-        def rebuild_cache(all_items):
-            """Re-deduplicate and sort the full list into a cache snapshot."""
-            def item_key(item):
-                tokens = item['name'].split(' ')
-                brand = tokens[0].lower().replace('ـ', '') if tokens else ''
-                qty = item.get('quantity') or ''
-                return f"{brand}_{qty}"
-            offer_items = []
-            seen_keys = set()
-            for item in all_items:
-                key = item_key(item)
-                store_key = f"{item.get('store','')}_{key}"
-                if item.get('offer') and store_key not in seen_keys:
-                    seen_keys.add(store_key)
-                    offer_items.append(item)
-            offer_items.sort(key=lambda i: i.get('unit_price') or i['price'])
-            return offer_items[:300]
-
-        all_items = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
-            futures = {ex.submit(run_popular, q): q for q in POPULAR_QUERIES}
-            for f in concurrent.futures.as_completed(futures):
-                try:
-                    items = f.result()
-                    for item in items:
-                        if item['link'] not in seen_links:
-                            seen_links.add(item['link'])
-                            all_items.append(item)
-                    # Incrementally update cache so frontend gets data sooner
-                    _deals_cache = rebuild_cache(all_items)
-                    _deals_cache_time = time.time()
-                except Exception:
-                    continue
-
-    except Exception as e:
-        print(f"Deals refresh error: {e}")
-    finally:
-        _deals_refreshing = False
+        except Exception as e:
+            print(f"Deals refresh error: {e}")
 
 
 # Pre-warm deals cache on startup
-import threading as _t
-_t.Thread(target=_refresh_deals, daemon=True).start()
+threading.Thread(target=_refresh_deals, daemon=True).start()
 
 if __name__ == '__main__':
     import os
