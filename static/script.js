@@ -1284,39 +1284,67 @@ document.addEventListener('DOMContentLoaded', () => {
         const brand = itemTokens[0];
         const itemQty = getQty(item);
 
+        // --- Pass 1: strict brand match + qty + token overlap ---
         for (const candidate of otherStoreResults) {
             const candidateTokens = getTokens(candidate.name);
             if (candidateTokens.length === 0) continue;
 
-            // --- Brand check: first token must match or brand must appear ---
+            // Brand check
             if (candidateTokens[0] !== brand && !candidateTokens.includes(brand)) {
-                // Check if brand appears as substring of first token (e.g. "ماكسون" in "ماكسون-هيدراماكس")
                 const firstTokenMatch = brand.includes(candidateTokens[0]) || candidateTokens[0].includes(brand);
                 if (!firstTokenMatch) continue;
             }
 
-            // --- Quantity check: if both have qty, they must match ---
+            // Quantity check
             const candidateQty = getQty(candidate);
             if (itemQty > 0 && candidateQty > 0 && itemQty !== candidateQty) continue;
 
-            // --- Token intersection ---
+            // Token intersection
             let intersection = 0;
             for (const t of itemTokens) {
                 if (candidateTokens.includes(t)) intersection++;
             }
+            if (intersection === 0) continue;
+
             const unionSize = new Set([...itemTokens, ...candidateTokens]).size;
             const jaccard = unionSize > 0 ? intersection / unionSize : 0;
-
-            // --- Overlap relative to the shorter name ---
             const minLen = Math.min(itemTokens.length, candidateTokens.length);
             const overlap = minLen > 0 ? intersection / minLen : 0;
-
-            // Combined score
             const score = (jaccard * 0.5) + (overlap * 0.5);
 
             if (score > highestScore && score >= 0.45) {
                 highestScore = score;
                 bestMatch = candidate;
+            }
+        }
+
+        // --- Pass 2: fallback — no brand check, require qty match + token overlap ---
+        if (!bestMatch) {
+            for (const candidate of otherStoreResults) {
+                const candidateTokens = getTokens(candidate.name);
+                if (candidateTokens.length === 0) continue;
+
+                const candidateQty = getQty(candidate);
+                // Must have matching qty if both have it
+                if (itemQty > 0 && candidateQty > 0 && itemQty !== candidateQty) continue;
+
+                let intersection = 0;
+                for (const t of itemTokens) {
+                    if (candidateTokens.includes(t)) intersection++;
+                }
+                if (intersection === 0) continue;
+
+                const unionSize = new Set([...itemTokens, ...candidateTokens]).size;
+                const jaccard = unionSize > 0 ? intersection / unionSize : 0;
+                const minLen = Math.min(itemTokens.length, candidateTokens.length);
+                const overlap = minLen > 0 ? intersection / minLen : 0;
+                const score = (jaccard * 0.5) + (overlap * 0.5);
+
+                // Higher threshold for fallback (must have strong token overlap)
+                if (score > highestScore && score >= 0.5) {
+                    highestScore = score;
+                    bestMatch = candidate;
+                }
             }
         }
 
@@ -1457,6 +1485,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     // Try brand + quantity
                     if (itemQty > 0) {
                         searchQueries.push(`${brand} ${itemQty}`);
+                    }
+                    // Try with itemTokens that are not first (e.g. second token alone)
+                    if (itemTokens.length > 1 && itemTokens[1] !== brand) {
+                        searchQueries.push(itemTokens[1]);
+                    }
+                    // Try middle tokens as a fallback
+                    for (let i = 0; i < Math.min(itemTokens.length, 5); i++) {
+                        if (itemTokens[i].length > 3 && itemTokens[i] !== brand) {
+                            searchQueries.push(itemTokens[i]);
+                        }
                     }
                     // Deduplicate
                     const uniqueQueries = [...new Set(searchQueries)];
