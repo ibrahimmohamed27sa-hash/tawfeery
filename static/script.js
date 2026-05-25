@@ -1237,16 +1237,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function cleanName(name) {
         if (!name) return '';
-        // Remove Arabic tatweer/kashida completely
         let cleaned = name.toLowerCase().replace(/ـ/g, '');
-        // Normalize Arabic letters and remove minor characters/brackets/punctuation
-        return cleaned
+        cleaned = cleaned
             .replace(/[أإآأ]/g, 'ا')
             .replace(/ة/g, 'ه')
             .replace(/ى/g, 'ي')
             .replace(/[،؛؟?–—:;!*&|"'\-_.,()\/\[\]+]/g, ' ')
             .replace(/\s+/g, ' ')
             .trim();
+        // Remove common descriptive phrases that hinder matching
+        const descPatterns = [
+            'للبيعشره الجافه', 'للبيعشره الدهنيه', 'للبيعشره العاديه', 'للبيعشره المختلطه',
+            'قابل للمضغ', 'قابله للمضغ', 'للبالغين', 'للاطفال', 'للأطفال',
+            'بنكهه', 'بتركيز', 'تركيز', 'طبي', 'خلاصه',
+        ];
+        for (const pat of descPatterns) {
+            cleaned = cleaned.replace(pat, '');
+        }
+        return cleaned.replace(/\s+/g, ' ').trim();
     }
 
     function getTokens(name) {
@@ -1254,86 +1262,105 @@ document.addEventListener('DOMContentLoaded', () => {
         const stopWords = new Set([
             'علبه', 'قرص', 'كبسوله', 'مل', 'جم', 'حبة', 'حبة/', 'حبات', 'ملج', 'جرام',
             'tablets', 'capsules', 'tabs', 'cap', 'ml', 'mg', 'g', 'pack', 'pcs', 'tablet', 'capsule',
-            'من', 'مع', 'في', 'ال', 'ar', 'en', 'او', 'أو', 'ام', 'أم', 'على', 'عن'
+            'من', 'مع', 'في', 'ال', 'ar', 'en', 'او', 'أو', 'ام', 'أم', 'على', 'عن',
+            'للبالغين', 'للاطفال', 'للأطفال',
         ]);
         return cleaned.split(' ').map(t => {
             let token = t;
-            // Strip Arabic definite article "ال" if length allows
-            if (token.startsWith('ال') && token.length > 4) {
-                token = token.substring(2);
-            }
-            // Strip Arabic prefix "لل" (for/to the) if length allows
-            if (token.startsWith('لل') && token.length > 4) {
-                token = token.substring(2);
-            }
+            if (token.startsWith('ال') && token.length > 4) token = token.substring(2);
+            if (token.startsWith('لل') && token.length > 4) token = token.substring(2);
             return token;
         }).filter(t => t.length > 1 && !stopWords.has(t));
     }
 
+    function getQty(item) {
+        return parseInt(item.quantity) || 0;
+    }
+
     function findEquivalent(item, otherStoreResults) {
+        // 1. Exact SKU match (highest priority)
+        if (item.sku) {
+            const bySku = otherStoreResults.find(c => c.sku && c.sku === item.sku);
+            if (bySku) return bySku;
+        }
+
         let bestMatch = null;
         let highestScore = 0;
 
         const itemTokens = getTokens(item.name);
         if (itemTokens.length === 0) return null;
-        const brand = itemTokens[0]; // Primary brand indicator
+
+        const brand = itemTokens[0];
+        const itemQty = getQty(item);
 
         for (const candidate of otherStoreResults) {
             const candidateTokens = getTokens(candidate.name);
             if (candidateTokens.length === 0) continue;
 
-            // Brand protection: both names must contain the brand name
-            if (candidateTokens[0] !== brand) {
-                if (!candidateTokens.includes(brand) && !itemTokens.includes(candidateTokens[0])) {
-                    continue;
-                }
+            // Score components
+            let brandScore = 0;
+            let qtyScore = 0;
+            let tokenScore = 0;
+
+            // Brand match: try first token, then any token
+            if (candidateTokens[0] === brand) {
+                brandScore = 1.0;
+            } else if (candidateTokens.includes(brand) || itemTokens.includes(candidateTokens[0])) {
+                brandScore = 0.6;
+            } else if (itemTokens.some(t => candidateTokens.includes(t)) || candidateTokens.some(t => itemTokens.includes(t))) {
+                brandScore = 0.3;
+            } else {
+                continue; // No brand overlap at all
             }
 
-            // Compute Token Intersection
+            // Quantity match
+            const candidateQty = getQty(candidate);
+            if (itemQty > 0 && candidateQty > 0) {
+                if (itemQty === candidateQty) qtyScore = 1.0;
+                else if (Math.abs(itemQty - candidateQty) <= 5) qtyScore = 0.5;
+            } else {
+                qtyScore = 0.5; // Neutral if no qty info
+            }
+
+            // Token intersection score
             let intersection = 0;
             for (const t of itemTokens) {
-                if (candidateTokens.includes(t)) {
-                    intersection++;
-                }
+                if (candidateTokens.includes(t)) intersection++;
             }
+            const union = new Set([...itemTokens, ...candidateTokens]).size;
+            tokenScore = union > 0 ? intersection / union : 0;
 
-            // Overlap Score relative to the shorter string tokens
-            const minSize = Math.min(itemTokens.length, candidateTokens.length);
-            const overlapScore = intersection / minSize;
+            // Combined weighted score
+            const score = (brandScore * 0.45) + (qtyScore * 0.25) + (tokenScore * 0.30);
 
-            // Jaccard similarity index to resolve length mismatch ties
-            const jaccard = intersection / (itemTokens.length + candidateTokens.length - intersection);
-            const score = (overlapScore * 0.75) + (jaccard * 0.25);
-
-            if (score > highestScore && score >= 0.5) {
+            if (score > highestScore && score >= 0.4) {
                 highestScore = score;
                 bestMatch = candidate;
             }
         }
 
-        // --- Fallback: Looser matching if no strong match found ---
+        // --- Fallback: looser matching ---
         if (!bestMatch) {
             for (const candidate of otherStoreResults) {
                 const candidateTokens = getTokens(candidate.name);
                 if (candidateTokens.length === 0) continue;
 
-                // Loose brand containment check
-                if (candidateTokens.includes(brand) || itemTokens.includes(candidateTokens[0])) {
-                    let intersection = 0;
-                    for (const t of itemTokens) {
-                        if (candidateTokens.includes(t)) intersection++;
-                    }
-                    if (intersection > 0) {
-                        const minSize = Math.min(itemTokens.length, candidateTokens.length);
-                        const overlapScore = intersection / minSize;
-                        const jaccard = intersection / (itemTokens.length + candidateTokens.length - intersection);
-                        const score = (overlapScore * 0.75) + (jaccard * 0.25);
-                        
-                        if (score > highestScore && score >= 0.3) {
-                            highestScore = score;
-                            bestMatch = candidate;
-                        }
-                    }
+                const hasBrandOverlap = candidateTokens.includes(brand) || itemTokens.includes(candidateTokens[0])
+                    || itemTokens.some(t => candidateTokens.includes(t));
+                if (!hasBrandOverlap) continue;
+
+                let intersection = 0;
+                for (const t of itemTokens) {
+                    if (candidateTokens.includes(t)) intersection++;
+                }
+                if (intersection === 0) continue;
+
+                const union = new Set([...itemTokens, ...candidateTokens]).size;
+                const score = intersection / union;
+
+                if (score > highestScore && score >= 0.25) {
+                    highestScore = score;
+                    bestMatch = candidate;
                 }
             }
         }
@@ -1444,8 +1471,10 @@ document.addEventListener('DOMContentLoaded', () => {
         renderEquivalents(storeResults);
 
         // If some stores missing, auto-search for equivalants via brand
-        if (missingCount > 0) {
-            const brand = getTokens(item.name)[0];
+        const itemTokens = getTokens(item.name);
+        const itemQty = getQty(item);
+        if (missingCount > 0 && itemTokens.length > 0) {
+            const brand = itemTokens[0];
             if (brand) {
                 // Show searching message
                 storeConfigs.forEach((config) => {
@@ -1460,44 +1489,61 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     }
                 });
-                // Silent fetch search results
+                // Silent fetch search results — try multiple keywords
                 (async () => {
-                    try {
-                        const controller = new AbortController();
-                        const timeoutId = setTimeout(() => controller.abort(), 30000);
-                        const resp = await fetch(`/api/search?q=${encodeURIComponent(brand)}`, { signal: controller.signal });
-                        clearTimeout(timeoutId);
-                        if (!resp.ok) throw new Error('search failed');
-                        const reader = resp.body.getReader();
-                        const decoder = new TextDecoder();
-                        let buf = '';
-                        while (true) {
-                            const { done, value } = await reader.read();
-                            if (done) break;
-                            buf += decoder.decode(value, { stream: true });
-                            const lines = buf.split('\n\n');
-                            buf = lines.pop();
-                            for (const line of lines) {
-                                const data = line.replace(/^data: /, '').trim();
-                                if (!data || data === 'DONE') continue;
-                                try {
-                                    const parsed = JSON.parse(data);
-                                    if (parsed.results && parsed.results.length > 0) {
-                                        storeConfigs.forEach((config) => {
-                                            if (item.store === config.key) return;
-                                            if (!storeResults[config.key]) {
-                                                const storeTargets = parsed.results.filter(r => r.store === config.key);
-                                                const eq = findEquivalent(item, storeTargets);
-                                                if (eq) {
-                                                    storeResults[config.key] = eq;
+                    const searchQueries = [brand];
+                    // Try first 2-3 tokens as more specific query
+                    if (itemTokens.length > 1) {
+                        searchQueries.push(itemTokens.slice(0, 2).join(' '));
+                    }
+                    if (itemTokens.length > 2) {
+                        searchQueries.push(itemTokens.slice(0, 3).join(' '));
+                    }
+                    // Try brand + quantity
+                    if (itemQty > 0) {
+                        searchQueries.push(`${brand} ${itemQty}`);
+                    }
+                    // Deduplicate
+                    const uniqueQueries = [...new Set(searchQueries)];
+
+                    for (const q of uniqueQueries) {
+                        const stillMissing = storeConfigs.some(c => c.key !== item.store && !storeResults[c.key]);
+                        if (!stillMissing) break;
+                        try {
+                            const controller = new AbortController();
+                            const timeoutId = setTimeout(() => controller.abort(), 25000);
+                            const resp = await fetch(`/api/search?q=${encodeURIComponent(q)}`, { signal: controller.signal });
+                            clearTimeout(timeoutId);
+                            if (!resp.ok) continue;
+                            const reader = resp.body.getReader();
+                            const decoder = new TextDecoder();
+                            let buf = '';
+                            while (true) {
+                                const { done, value } = await reader.read();
+                                if (done) break;
+                                buf += decoder.decode(value, { stream: true });
+                                const lines = buf.split('\n\n');
+                                buf = lines.pop();
+                                for (const line of lines) {
+                                    const data = line.replace(/^data: /, '').trim();
+                                    if (!data || data === 'DONE') continue;
+                                    try {
+                                        const parsed = JSON.parse(data);
+                                        if (parsed.results && parsed.results.length > 0) {
+                                            storeConfigs.forEach((config) => {
+                                                if (item.store === config.key) return;
+                                                if (!storeResults[config.key]) {
+                                                    const storeTargets = parsed.results.filter(r => r.store === config.key);
+                                                    const eq = findEquivalent(item, storeTargets);
+                                                    if (eq) storeResults[config.key] = eq;
                                                 }
-                                            }
-                                        });
-                                    }
-                                } catch (_) {}
+                                            });
+                                        }
+                                    } catch (_) {}
+                                }
                             }
-                        }
-                    } catch (_) {}
+                        } catch (_) {}
+                    }
                     renderEquivalents(storeResults);
                 })();
             }

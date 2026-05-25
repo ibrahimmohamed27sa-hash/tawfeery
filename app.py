@@ -174,6 +174,7 @@ def scrape_united(query):
                         if h.get('isOfferApplicable'):
                             offer_text = h.get('offerApplicableLabel', '')
                         
+                        sku = h.get('objectID') or h.get('sku') or ''
                         item = {
                             'store': 'United Pharmacy',
                             'name': name,
@@ -181,6 +182,7 @@ def scrape_united(query):
                             'image': img_url,
                             'link': link,
                             'offer': offer_text,
+                            'sku': sku,
                         }
                         enrich_item(item, raw_hit=h)
                         results.append(item)
@@ -281,6 +283,7 @@ def scrape_nahdi(query):
                                     elif re.search(r'\d+', promo):
                                         offer_text = promo
 
+                            sku = h.get('sku', '')
                             item = {
                                 'store': 'Nahdi Online',
                                 'name': name,
@@ -288,6 +291,7 @@ def scrape_nahdi(query):
                                 'image': img_url,
                                 'link': link,
                                 'offer': offer_text,
+                                'sku': sku,
                             }
                             enrich_item(item, raw_hit=h)
                             results.append(item)
@@ -403,6 +407,7 @@ def scrape_aldawaa(query):
                 else:
                     offer_text = ''
 
+                sku = p.get('code', '')
                 item = {
                     'store': 'Al-Dawaa',
                     'name': name,
@@ -410,6 +415,7 @@ def scrape_aldawaa(query):
                     'image': img_url,
                     'link': link,
                     'offer': offer_text,
+                    'sku': sku,
                 }
                 enrich_item(item, raw_hit=p)
                 results.append(item)
