@@ -607,7 +607,7 @@ def robots_txt():
 
 @app.route('/sitemap.xml')
 def sitemap_xml():
-    return Response(render_template('sitemap.xml'), mimetype='application/xml')
+    return Response(render_template('sitemap.xml'), mimetype='text/xml')
 
 @app.route('/_ping')
 def ping():

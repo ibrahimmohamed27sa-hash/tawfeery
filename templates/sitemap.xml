@@ -1,8 +1,33 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>{{ request.url_root }}</loc>
+    <loc>https://tawfeery.onrender.com/</loc>
     <priority>1.0</priority>
     <changefreq>daily</changefreq>
+  </url>
+  <url>
+    <loc>https://tawfeery.onrender.com/?q=Panadol</loc>
+    <priority>0.8</priority>
+    <changefreq>weekly</changefreq>
+  </url>
+  <url>
+    <loc>https://tawfeery.onrender.com/?q=%D9%81%D9%8A%D9%81%D8%A7%D8%AF%D9%88%D9%84</loc>
+    <priority>0.8</priority>
+    <changefreq>weekly</changefreq>
+  </url>
+  <url>
+    <loc>https://tawfeery.onrender.com/?q=%D8%B3%D9%88%D9%84%D8%A8%D8%A7%D8%AF%D9%8A%D9%86</loc>
+    <priority>0.8</priority>
+    <changefreq>weekly</changefreq>
+  </url>
+  <url>
+    <loc>https://tawfeery.onrender.com/?q=%D8%AC%D8%A7%D9%81%D9%8A%D8%B3%D9%83%D9%88%D9%86</loc>
+    <priority>0.8</priority>
+    <changefreq>weekly</changefreq>
+  </url>
+  <url>
+    <loc>https://tawfeery.onrender.com/?q=%D9%83%D9%84%D8%A7%D8%B1%D9%8A%D8%AA%D9%8A%D9%86</loc>
+    <priority>0.8</priority>
+    <changefreq>weekly</changefreq>
   </url>
 </urlset>
