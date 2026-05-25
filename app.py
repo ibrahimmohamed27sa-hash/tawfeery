@@ -600,6 +600,12 @@ def robots_txt():
 def sitemap_xml():
     return Response(render_template('sitemap.xml'), mimetype='application/xml')
 
+@app.route('/_ping')
+def ping():
+    """Health-check endpoint for uptime monitors (UptimeRobot, cron-job.org).
+    Keeps the Render free tier instance warm by external ping every 5 min."""
+    return Response('pong', mimetype='text/plain')
+
 
 # ── Admin / Analytics Dashboard ───────────────────────────────────────────────
 
