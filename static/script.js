@@ -1398,7 +1398,10 @@ document.addEventListener('DOMContentLoaded', () => {
             // Skip the store of the current product
             if (item.store === config.key) return;
 
-            const targets = allResults.filter(r => r.store === config.key);
+            let targets = allResults.filter(r => r.store === config.key);
+            if (targets.length === 0) {
+                targets = dealsData.filter(r => r.store === config.key);
+            }
             const equiv = findEquivalent(item, targets);
 
             const div = document.createElement('div');
