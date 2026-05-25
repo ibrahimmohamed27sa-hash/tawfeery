@@ -1480,11 +1480,11 @@ document.addEventListener('DOMContentLoaded', () => {
                                 try {
                                     const parsed = JSON.parse(data);
                                     if (parsed.results && parsed.results.length > 0) {
-                                        const newTargets = parsed.results;
                                         storeConfigs.forEach((config) => {
                                             if (item.store === config.key) return;
                                             if (!storeResults[config.key]) {
-                                                const eq = findEquivalent(item, newTargets);
+                                                const storeTargets = parsed.results.filter(r => r.store === config.key);
+                                                const eq = findEquivalent(item, storeTargets);
                                                 if (eq) {
                                                     storeResults[config.key] = eq;
                                                     found = true;
