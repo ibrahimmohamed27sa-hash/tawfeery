@@ -1533,7 +1533,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     // English name FIRST — more standardized across stores
                     const itemEnTokens = getEnTokens(item.name_en);
                     if (itemEnTokens.length > 0) {
+                        // Full filtered English name (best query)
                         searchQueries.push(itemEnTokens.join(' '));
+                        // Also try raw English name with hyphens/underscores replaced by spaces
+                        if (item.name_en) {
+                            const rawClean = item.name_en.replace(/[/\-_,.()]+/g, ' ').replace(/\s+/g, ' ').trim();
+                            if (rawClean && rawClean !== itemEnTokens.join(' ')) {
+                                searchQueries.push(rawClean);
+                            }
+                        }
                         if (itemEnTokens.length > 1) {
                             searchQueries.push(itemEnTokens.slice(0, Math.min(3, itemEnTokens.length)).join(' '));
                         }
