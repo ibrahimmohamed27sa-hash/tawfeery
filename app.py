@@ -73,7 +73,9 @@ def extract_quantity(name):
         # Arabic: 30 حبة, 30 حبّة, 30 قرص, 30 كبسولة, 30 كبسولة, 30 حفاض, 30 حفاضة, 30 قطعة
         r'(\d+)\s*(حبة|حبّة|حبات|قرص|اقراص|كبسولة|كبسولات|حفاض|حفاضة|حفائض|قطعة|قطعه|قطع|شريط|شرائط|ملعقة|ملىء|حقنة|امبول|امبولات|لبوس|تحميلة)',
         # English: 30 Tablets, 30 Capsules, 30 Pills, 30 Diapers, 30 Pieces, 30's
-        r'(\d+)\s*(Tablets?|Capsules?|Pills?|Diapers?|Pieces?|Count|Pack|Tabs?|Caps?|Pcs|ML|Mg|G|KG)',
+        # NOTE: Do NOT include dosage/volume units (ML, Mg, G, KG) here — those are
+        # dosage values (e.g. 500mg), not item counts.
+        r'(\d+)\s*(Tablets?|Capsules?|Pills?|Diapers?|Pieces?|Count|Pack|Tabs?|Caps?|Pcs)',
         # Pack of 30
         r'(?:Pack|pack|عبوة|علبة)\s*(?:of|OF|)\s*(\d+)',
         # 30+1, 30+1 Free

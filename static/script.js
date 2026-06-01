@@ -769,7 +769,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             let equivalentsHTML = '';
             storesToCompare.forEach(store => {
-                if (item.store.includes(store.class === 'nahdi' ? 'Nahdi' : store.class === 'dawaa' ? 'Dawaa' : 'United')) {
+                if (storeMatches(item.store, store.key)) {
                     return; // Skip native store
                 }
 
@@ -782,7 +782,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 // If not custom bound, check auto-matching in cache
                 if (!equiv) {
-                    const storeCache = sessionScrapedProducts.filter(r => r.store.includes(store.key.split(' ')[0]));
+                    const storeCache = sessionScrapedProducts.filter(r => storeMatches(r.store, store.key));
                     equiv = findEquivalent(item, storeCache);
                 }
 
@@ -806,7 +806,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     `;
                 } else {
                     // Search session cache for same-brand suggestions
-                    const storeCache = sessionScrapedProducts.filter(r => r.store.includes(store.key.split(' ')[0]));
+                    const storeCache = sessionScrapedProducts.filter(r => storeMatches(r.store, store.key));
                     const itemTokens = getTokens(item.name);
                     const brand = itemTokens[0];
                     
@@ -938,9 +938,9 @@ document.addEventListener('DOMContentLoaded', () => {
     function calculateTotals() {
         // Group all scraped cache results by store
         const storeResults = {
-            'Nahdi Online':    sessionScrapedProducts.filter(r => r.store.includes('Nahdi')),
-            'Al-Dawaa':        sessionScrapedProducts.filter(r => r.store.includes('Dawaa')),
-            'United Pharmacy': sessionScrapedProducts.filter(r => r.store.includes('United'))
+            'Nahdi Online':    sessionScrapedProducts.filter(r => storeMatches(r.store, 'Nahdi Online')),
+            'Al-Dawaa':        sessionScrapedProducts.filter(r => storeMatches(r.store, 'Al-Dawaa')),
+            'United Pharmacy': sessionScrapedProducts.filter(r => storeMatches(r.store, 'United Pharmacy'))
         };
 
         let nahdiTotal  = 0;
@@ -955,7 +955,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const q = basketItem.quantity || 1;
 
             // ── Nahdi Online Equivalent
-            if (basketItem.store.includes('Nahdi')) {
+            if (storeMatches(basketItem.store, 'Nahdi Online')) {
                 nahdiTotal += calculateDiscountedPrice(basketItem.price, basketItem.offer, q);
             } else {
                 let equiv = null;
@@ -975,7 +975,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // ── Al-Dawaa Equivalent
-            if (basketItem.store.includes('Dawaa')) {
+            if (storeMatches(basketItem.store, 'Al-Dawaa')) {
                 dawaaTotal += calculateDiscountedPrice(basketItem.price, basketItem.offer, q);
             } else {
                 let equiv = null;
@@ -995,7 +995,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // ── United Pharmacy Equivalent
-            if (basketItem.store.includes('United')) {
+            if (storeMatches(basketItem.store, 'United Pharmacy')) {
                 unitedTotal += calculateDiscountedPrice(basketItem.price, basketItem.offer, q);
             } else {
                 let equiv = null;
@@ -1282,6 +1282,11 @@ document.addEventListener('DOMContentLoaded', () => {
             .filter(t => t.length > 1 && !['for', 'the', 'and', 'with', 'by', 'in', 'of', 'to', 'plus', 'all'].includes(t));
     }
 
+    // Bug 6 fix: Consistent store matching helper used everywhere
+    function storeMatches(storeName, storeKey) {
+        return storeName === storeKey;
+    }
+
     // Character-level Jaccard similarity for fuzzy brand matching
     function brandSimilarity(a, b) {
         if (!a || !b) return 0;
@@ -1340,8 +1345,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (candidateTokens.length === 0 && candidateEnTokens.length === 0) continue;
 
-            // Quantity check (hard filter when both have it)
-            if (itemQty > 0 && candidateQty > 0 && itemQty !== candidateQty) continue;
+            // Bug 2 fix: Quantity is a scoring penalty, not a hard reject.
+            // Quantity extraction is unreliable (e.g. 500mg parsed as qty=500),
+            // so only hard-reject when quantities are clearly different pack sizes.
+            let qtyPenalty = 0;
+            if (itemQty > 0 && candidateQty > 0 && itemQty !== candidateQty) {
+                const ratio = Math.max(itemQty, candidateQty) / Math.min(itemQty, candidateQty);
+                if (ratio > 2) continue;  // Truly different products (e.g. 10 vs 100)
+                qtyPenalty = 0.15;  // Penalize but don't reject close quantities
+            }
 
             // --- Compute English name score ---
             let enScore = 0;
@@ -1366,14 +1378,22 @@ document.addEventListener('DOMContentLoaded', () => {
                     brandBonus = 0.15;
                 }
             }
-            // Fallback brand from first tokens (Arabic)
+            // Bug 5 fix: Check first 3 tokens for brand match, not just the first.
+            // Arabic names from different stores may order words differently
+            // (e.g. Nahdi: "بنادول إكسترا" vs Al-Dawaa: "حبوب بنادول إكسترا").
             if (brandBonus === 0 && itemTokens.length > 0 && candidateTokens.length > 0) {
-                const firstToken = itemTokens[0];
-                const candFirst = candidateTokens[0];
-                if (firstToken === candFirst || firstToken.includes(candFirst) || candFirst.includes(firstToken)) {
-                    brandBonus = 0.15;
-                } else if (brandSimilarity(firstToken, candFirst) > 0.6) {
-                    brandBonus = 0.1;
+                const itemFirst3 = itemTokens.slice(0, 3);
+                const candFirst3 = candidateTokens.slice(0, 3);
+                for (const it of itemFirst3) {
+                    for (const ct of candFirst3) {
+                        if (it === ct || it.includes(ct) || ct.includes(it)) {
+                            brandBonus = Math.max(brandBonus, 0.15);
+                            break;
+                        } else if (brandSimilarity(it, ct) > 0.6) {
+                            brandBonus = Math.max(brandBonus, 0.1);
+                        }
+                    }
+                    if (brandBonus >= 0.15) break;
                 }
             }
 
@@ -1384,7 +1404,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (enScore > 0 && arScore > 0) {
                 combinedScore = Math.max(combinedScore, (enScore + arScore) / 2);
             }
-            const finalScore = combinedScore + brandBonus;
+            const finalScore = combinedScore + brandBonus - qtyPenalty;
 
             if (finalScore > highestScore) {
                 // Pass 1: requires brand match + score >= 0.45
@@ -1462,10 +1482,15 @@ document.addEventListener('DOMContentLoaded', () => {
         let missingCount = 0;
         const storeResults = {};
         storeConfigs.forEach((config) => {
-            if (item.store === config.key) return;
-            let targets = allResults.filter(r => r.store === config.key);
+            if (storeMatches(item.store, config.key)) return;
+            // Bug 7 fix: Also search sessionScrapedProducts so modal matches
+            // what the basket dashboard finds (consistent equivalents).
+            let targets = allResults.filter(r => storeMatches(r.store, config.key));
             if (targets.length === 0) {
-                targets = dealsData.filter(r => r.store === config.key);
+                targets = sessionScrapedProducts.filter(r => storeMatches(r.store, config.key));
+            }
+            if (targets.length === 0) {
+                targets = dealsData.filter(r => storeMatches(r.store, config.key));
             }
             const equiv = findEquivalent(item, targets);
             storeResults[config.key] = equiv || null;
@@ -1648,14 +1673,14 @@ document.addEventListener('DOMContentLoaded', () => {
         checkoutStoreName.textContent = storeName === 'Nahdi Online' ? 'صيدلية النهدي' : storeName === 'Al-Dawaa' ? 'صيدلية الدواء' : 'المتحدة';
         checkoutItemsList.innerHTML = '';
         
-        const storeResults = sessionScrapedProducts.filter(r => r.store.includes(storeName.split(' ')[0]));
+        const storeResults = sessionScrapedProducts.filter(r => storeMatches(r.store, storeName));
         const linksToOpen = [];
 
         basket.forEach(basketItem => {
             let equiv = null;
             const q = basketItem.quantity || 1;
 
-            if (basketItem.store.includes(storeName.split(' ')[0])) {
+            if (storeMatches(basketItem.store, storeName)) {
                 equiv = basketItem;
             } else {
                 const customLink = customEquivalents[basketItem.link]?.[storeName];
