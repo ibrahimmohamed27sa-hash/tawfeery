@@ -1314,6 +1314,100 @@ document.addEventListener('DOMContentLoaded', () => {
         return (jaccard * 0.35) + (overlap * 0.65);
     }
 
+    function normalizeSize(val) {
+        if (val === null || val === undefined) return null;
+        if (typeof val === 'number') return val;
+        const str = String(val).toLowerCase().trim();
+        if (str === 'newborn' || str === 'new born' || str === 'حديثي الولادة' || str === 'حديثي الولاده') return 1;
+        if (str === 'small' || str === 'صغير') return 2;
+        if (str === 'medium' || str === 'وسط' || str === 'ميديوم') return 3;
+        if (str === 'large' || str === 'كبير' || str === 'لارج') return 4;
+        if (str === 'xlarge' || str === 'xl' || str === 'كبير جدا' || str === 'كبير جداً' || str === 'اكس لارج' || str === 'إكس لارج') return 5;
+        if (str === 'xxlarge' || str === 'xxl' || str === 'دبل اكس') return 6;
+        return val;
+    }
+
+    function extractProductSize(name, nameEn) {
+        const text = ((name || '') + ' ' + (nameEn || '')).toLowerCase();
+        
+        // 1. Check for "مقاس X" or "size X"
+        const sizeNumMatch = text.match(/(?:مقاس|size|sz)[:\s]*\(?\s*([0-9]+)\s*\)?/i);
+        if (sizeNumMatch) {
+            return parseInt(sizeNumMatch[1], 10);
+        }
+        
+        // 2. Parenthesized number or standalone number for diaper sizes, but only if diaper-like words exist
+        const isDiaperOrPants = text.includes('حفاض') || text.includes('diaper') || text.includes('pan') || text.includes('كلوت') || text.includes('حفاظ') || text.includes('بيبي جوي') || text.includes('بامبرز') || text.includes('فاين بيبي') || text.includes('molfix') || text.includes('baby joy') || text.includes('pampers');
+        if (isDiaperOrPants) {
+            const parenMatch = text.match(/\(\s*([1-8])\s*\)/);
+            if (parenMatch) {
+                return parseInt(parenMatch[1], 10);
+            }
+        }
+
+        // 3. Word sizes
+        if (text.includes('newborn') || text.includes('new born') || text.includes('حديثي الولادة') || text.includes('حديثي الولاده')) {
+            return 'newborn';
+        }
+        if (text.includes('xx-large') || text.includes('xxl') || text.includes('2xl') || text.includes('دبل اكس')) {
+            return 'xxlarge';
+        }
+        if (text.includes('x-large') || text.includes('xl') || text.includes('اكس لارج') || text.includes('إكس لارج') || text.includes('كبير جدا')) {
+            return 'xlarge';
+        }
+        if (text.includes('large') || text.includes('كبير') || text.includes('لارج')) {
+            return 'large';
+        }
+        if (text.includes('medium') || text.includes('وسط') || text.includes('ميديوم')) {
+            return 'medium';
+        }
+        if (text.includes('small') || text.includes('صغير')) {
+            return 'small';
+        }
+
+        return null;
+    }
+
+    function extractWeightVolume(name, nameEn) {
+        const text = ((name || '') + ' ' + (nameEn || '')).toLowerCase().replace(/,/g, '.');
+        
+        // Check liter (L / لتر) first to prevent sub-string issues (e.g. 1L vs 100ml)
+        const literMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:l|liter|liters|لتر)\b/i) || text.match(/(\d+(?:\.\d+)?)\s*لتر/);
+        if (literMatch) {
+            const liters = parseFloat(literMatch[1]);
+            return (liters * 1000) + 'ml'; // normalize to ml
+        }
+        if (text.includes('لترين') || text.includes('لتران')) {
+            return '2000ml';
+        }
+        
+        // Check ml
+        const mlMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:ml|milliliter|milliliters|مليلتر|مللتر|مل)\b/i) || text.match(/(\d+(?:\.\d+)?)\s*مل/);
+        if (mlMatch) {
+            return parseFloat(mlMatch[1]) + 'ml';
+        }
+        
+        // Check mg
+        const mgMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:mg|milligram|milligrams|ملغ|ملغم)\b/i) || text.match(/(\d+(?:\.\d+)?)\s*(?:ملغ|ملغم)/);
+        if (mgMatch) {
+            return parseFloat(mgMatch[1]) + 'mg';
+        }
+        
+        // Check kg
+        const kgMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:kg|kilogram|kilograms|كجم|كيلو|كيلوجرام)\b/i) || text.match(/(\d+(?:\.\d+)?)\s*(?:كجم|كيلو)/);
+        if (kgMatch) {
+            return parseFloat(kgMatch[1]) + 'kg';
+        }
+        
+        // Check g
+        const gMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:g|gram|grams|جم|جرام|غرام|غ)\b/i) || text.match(/(\d+(?:\.\d+)?)\s*(?:جم|جرام|غ)/);
+        if (gMatch) {
+            return parseFloat(gMatch[1]) + 'g';
+        }
+        
+        return null;
+    }
+
     function findEquivalent(item, otherStoreResults) {
         // 1. Exact SKU match
         if (item.sku) {
@@ -1334,6 +1428,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const itemEnTokens = getEnTokens(item.name_en);
         const itemBrand = getItemBrand(item);
         const itemQty = getQty(item);
+        const itemSize = normalizeSize(extractProductSize(item.name, item.name_en));
+        const itemWeight = extractWeightVolume(item.name, item.name_en);
 
         if (itemTokens.length === 0 && itemEnTokens.length === 0) return null;
 
@@ -1345,14 +1441,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (candidateTokens.length === 0 && candidateEnTokens.length === 0) continue;
 
-            // Bug 2 fix: Quantity is a scoring penalty, not a hard reject.
-            // Quantity extraction is unreliable (e.g. 500mg parsed as qty=500),
-            // so only hard-reject when quantities are clearly different pack sizes.
-            let qtyPenalty = 0;
-            if (itemQty > 0 && candidateQty > 0 && itemQty !== candidateQty) {
-                const ratio = Math.max(itemQty, candidateQty) / Math.min(itemQty, candidateQty);
-                if (ratio > 2) continue;  // Truly different products (e.g. 10 vs 100)
-                qtyPenalty = 0.15;  // Penalize but don't reject close quantities
+            // ── HARD FILTERS: reject clearly different products ──
+
+            // Size/variant check: مقاس 1 ≠ مقاس 5 → hard reject
+            const candidateSize = normalizeSize(extractProductSize(candidate.name, candidate.name_en));
+            if (itemSize !== null && candidateSize !== null && itemSize !== candidateSize) continue;
+
+            // Weight/dosage check: 500mg ≠ 200mg → hard reject
+            const candidateWeight = extractWeightVolume(candidate.name, candidate.name_en);
+            if (itemWeight !== null && candidateWeight !== null && itemWeight !== candidateWeight) continue;
+
+            // Quantity/pack count check: 90 حفاض ≠ 108 حفاض → hard reject
+            // This is strict because quantity extraction from unit words (حبة, حفاض, Tablets)
+            // is reliable after Bug 3 fix (dosage units removed from extraction).
+            if (itemQty > 0 && candidateQty > 0 && itemQty !== candidateQty) continue;
+
+            // ── SCORING ──
+
+            // Quantity bonus when both have matching quantity
+            let qtyBonus = 0;
+            if (itemQty > 0 && candidateQty > 0 && itemQty === candidateQty) {
+                qtyBonus = 0.1;
+            }
+
+            // Size bonus when both have matching size
+            let sizeBonus = 0;
+            if (itemSize !== null && candidateSize !== null && itemSize === candidateSize) {
+                sizeBonus = 0.15;
             }
 
             // --- Compute English name score ---
@@ -1397,26 +1512,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            // Combined score: use best of en/ar + brand bonus
+            // Combined score: use best of en/ar + brand bonus + size/qty bonuses
             const bestNameScore = Math.max(enScore, arScore);
             // If both lang scores are present, also try combined
             let combinedScore = bestNameScore;
             if (enScore > 0 && arScore > 0) {
                 combinedScore = Math.max(combinedScore, (enScore + arScore) / 2);
             }
-            const finalScore = combinedScore + brandBonus - qtyPenalty;
+            const finalScore = combinedScore + brandBonus + qtyBonus + sizeBonus;
 
             if (finalScore > highestScore) {
-                // Pass 1: requires brand match + score >= 0.45
+                // Pass 1: requires brand match + score >= 0.55 (raised from 0.45)
                 const hasBrand = (itemBrand && candidateBrand) ||
                     (itemTokens.length > 0 && candidateTokens.length > 0 &&
                      (itemTokens[0] === candidateTokens[0] || brandSimilarity(itemTokens[0], candidateTokens[0]) > 0.5));
-                if (hasBrand && finalScore >= 0.45) {
+                if (hasBrand && finalScore >= 0.55) {
                     highestScore = finalScore;
                     bestMatch = candidate;
                 }
-                // Pass 2 (fallback, no brand): requires strong token overlap
-                else if (!hasBrand && combinedScore >= 0.62 && itemQty > 0 && candidateQty > 0 && itemQty === candidateQty) {
+                // Pass 2 (fallback, no brand): requires very strong token overlap
+                else if (!hasBrand && combinedScore >= 0.65 && itemQty > 0 && candidateQty > 0 && itemQty === candidateQty) {
                     highestScore = finalScore;
                     bestMatch = candidate;
                 }
