@@ -15,11 +15,12 @@ function sanitizeUrl(str) {
     return '';
 }
 
+const SW_CACHE = 'tawfeery-v3';
 document.addEventListener('DOMContentLoaded', () => {
     // PWA: Service Worker + Install Prompt
     let deferredPrompt = null;
     if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/static/sw.js');
+        navigator.serviceWorker.register('/static/sw.js?v=' + SW_CACHE);
     }
     window.addEventListener('beforeinstallprompt', (e) => {
         e.preventDefault();
@@ -1426,134 +1427,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const bySku = otherStoreResults.find(c => c.sku && c.sku === item.sku);
             if (bySku) return bySku;
         }
-
-        // 2. GTIN/barcode match (from Nahdi)
-        if (item.gtin) {
-            const byGtin = otherStoreResults.find(c => c.gtin && c.gtin === item.gtin);
-            if (byGtin) return byGtin;
-        }
-
-        let bestMatch = null;
-        let highestScore = 0;
-
-        const itemTokens = getTokens(item.name);
-        // Fallback: extract Latin words from Arabic name when name_en missing
-        const itemLatin = extractLatinTokens(item.name);
-        const itemEnTokens = getEnTokens(item.name_en).length > 0 ? getEnTokens(item.name_en) : itemLatin;
-        const itemBrand = getItemBrand(item) || (itemTokens.length > 0 ? itemTokens[0].toLowerCase().replace(/ـ/g, '') : '');
-        const itemQty = getQty(item);
-        const itemSize = normalizeSize(extractProductSize(item.name, item.name_en));
-        const itemWeight = extractWeightVolume(item.name, item.name_en);
-
-        if (itemTokens.length === 0 && itemEnTokens.length === 0) return null;
-
-        for (const candidate of otherStoreResults) {
-            const candidateTokens = getTokens(candidate.name);
-            const candidateLatin = extractLatinTokens(candidate.name);
-            const candidateEnTokens = getEnTokens(candidate.name_en).length > 0 ? getEnTokens(candidate.name_en) : candidateLatin;
-            const candidateBrand = getItemBrand(candidate) || (candidateTokens.length > 0 ? candidateTokens[0].toLowerCase().replace(/ـ/g, '') : '');
-            const candidateQty = getQty(candidate);
-
-            if (candidateTokens.length === 0 && candidateEnTokens.length === 0) continue;
-
-            // ── HARD FILTERS: reject clearly different products ──
-
-            // Size/variant check: مقاس 1 ≠ مقاس 5 → hard reject
-            const candidateSize = normalizeSize(extractProductSize(candidate.name, candidate.name_en));
-            if (itemSize !== null && candidateSize !== null && itemSize !== candidateSize) continue;
-
-            // Weight/dosage check: 500mg ≠ 200mg → hard reject
-            const candidateWeight = extractWeightVolume(candidate.name, candidate.name_en);
-            if (itemWeight !== null && candidateWeight !== null && itemWeight !== candidateWeight) continue;
-
-            // Quantity/pack count check: 90 حفاض ≠ 108 حفاض → hard reject
-            if (itemQty > 0 && candidateQty > 0 && itemQty !== candidateQty) continue;
-
-            // ── SCORING ──
-
-            // Quantity bonus when both have matching quantity
-            let qtyBonus = 0;
-            if (itemQty > 0 && candidateQty > 0 && itemQty === candidateQty) {
-                qtyBonus = 0.1;
-            }
-
-            // Size bonus when both have matching size
-            let sizeBonus = 0;
-            if (itemSize !== null && candidateSize !== null && itemSize === candidateSize) {
-                sizeBonus = 0.15;
-            }
-
-            // --- Compute English name score (use Latin as fallback) ---
-            let enScore = 0;
-            if (itemEnTokens.length > 0 && candidateEnTokens.length > 0) {
-                enScore = tokenScore(itemEnTokens, candidateEnTokens);
-            }
-
-            // --- Compute Arabic name score ---
-            let arScore = 0;
-            if (itemTokens.length > 0 && candidateTokens.length > 0) {
-                arScore = tokenScore(itemTokens, candidateTokens);
-            }
-
-            // --- Compute brand/manufacturer bonus ---
-            let brandBonus = 0;
-            if (itemBrand && candidateBrand) {
-                if (itemBrand === candidateBrand) {
-                    brandBonus = 0.3;
-                } else if (itemBrand.includes(candidateBrand) || candidateBrand.includes(itemBrand)) {
-                    brandBonus = 0.2;
-                } else if (brandSimilarity(itemBrand, candidateBrand) > 0.6) {
-                    brandBonus = 0.15;
-                }
-            }
-            // Check first 3 tokens for brand match (handles word-order differences)
-            if (brandBonus === 0 && itemTokens.length > 0 && candidateTokens.length > 0) {
-                const itemFirst3 = itemTokens.slice(0, 3);
-                const candFirst3 = candidateTokens.slice(0, 3);
-                for (const it of itemFirst3) {
-                    for (const ct of candFirst3) {
-                        if (it === ct || it.includes(ct) || ct.includes(it)) {
-                            brandBonus = Math.max(brandBonus, 0.15);
-                            break;
-                        } else if (brandSimilarity(it, ct) > 0.6) {
-                            brandBonus = Math.max(brandBonus, 0.1);
-                        }
-                    }
-                    if (brandBonus >= 0.15) break;
-                }
-            }
-
-            // Combined score: use best of en/ar
-            const bestNameScore = Math.max(enScore, arScore);
-            // If both lang scores are present, average them
-            let combinedScore = bestNameScore;
-            if (enScore > 0 && arScore > 0) {
-                combinedScore = Math.max(combinedScore, (enScore + arScore) / 2);
-            }
-            const finalScore = combinedScore + brandBonus + qtyBonus + sizeBonus;
-
-            if (finalScore > highestScore) {
-                // Brand is considered present if EITHER side has brand info or first tokens overlap
-                const hasBrand = (itemBrand || candidateBrand) ||
-                    (itemTokens.length > 0 && candidateTokens.length > 0 &&
-                     (itemTokens[0] === candidateTokens[0] || brandSimilarity(itemTokens[0], candidateTokens[0]) > 0.5));
-                if (hasBrand) {
-                    if (finalScore >= 0.45) {  // Pass 1: moderate threshold with brand
-                        highestScore = finalScore;
-                        bestMatch = candidate;
-                    }
-                } else {
-                    // Pass 2 (no brand info at all): needs strong language overlap + qty match
-                    if (combinedScore >= 0.6 && itemQty > 0 && candidateQty > 0 && itemQty === candidateQty) {
-                        highestScore = finalScore;
-                        bestMatch = candidate;
-                    }
-                }
-            }
-        }
-
-        return bestMatch;
-    }
 
         // 2. GTIN/barcode match (from Nahdi)
         if (item.gtin) {
