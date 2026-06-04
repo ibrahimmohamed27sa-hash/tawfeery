@@ -125,13 +125,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const checkoutItemsList    = document.getElementById('checkout-items-list');
     const checkoutOpenAllBtn   = document.getElementById('checkout-open-all-btn');
 
+    // Safe JSON parse helper (handles corrupted localStorage)
+    function safeJsonParse(val, fallback) {
+        try { return JSON.parse(val) || fallback; } catch (_) { return fallback; }
+    }
+
     // State Variables
     let allResults    = []; // Accumulate search results
-    let basket        = JSON.parse(localStorage.getItem('tawfeery_basket')) || [];
-    let favorites     = JSON.parse(localStorage.getItem('tawfeery_favorites')) || [];
-    let searchHistory = JSON.parse(localStorage.getItem('tawfeery_history')) || [];
-    let sessionScrapedProducts = JSON.parse(localStorage.getItem('tawfeery_scraped_cache')) || [];
-    let customEquivalents = JSON.parse(localStorage.getItem('tawfeery_custom_equivalents')) || {};
+    let basket        = safeJsonParse(localStorage.getItem('tawfeery_basket'), []);
+    let favorites     = safeJsonParse(localStorage.getItem('tawfeery_favorites'), []);
+    let searchHistory = safeJsonParse(localStorage.getItem('tawfeery_history'), []);
+    let sessionScrapedProducts = safeJsonParse(localStorage.getItem('tawfeery_scraped_cache'), []);
+    let customEquivalents = safeJsonParse(localStorage.getItem('tawfeery_custom_equivalents'), {});
     let currentQuery  = '';
 
     // Deals Section DOM
