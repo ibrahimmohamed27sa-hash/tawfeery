@@ -1282,8 +1282,6 @@ document.addEventListener('DOMContentLoaded', () => {
             .filter(t => t.length > 1 && !['for', 'the', 'and', 'with', 'by', 'in', 'of', 'to', 'plus', 'all'].includes(t));
     }
 
-<<<<<<< HEAD
-=======
     // Extract Latin/English words from Arabic names (brands like "Panadol", "Centrum")
     function extractLatinTokens(name) {
         if (!name || typeof name !== 'string') return [];
@@ -1291,8 +1289,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!latinWords) return [];
         return latinWords.map(w => w.toLowerCase()).filter(t => t.length > 1);
     }
-
->>>>>>> 007a43b (fix: robust matching — handle non-string name_en, extract Latin tokens from Arabic names, lower hasBrand threshold to 0.45, fix quantity regex to exclude dosage units)
     // Bug 6 fix: Consistent store matching helper used everywhere
     function storeMatches(storeName, storeKey) {
         return storeName === storeKey;
