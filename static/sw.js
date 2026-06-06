@@ -1,4 +1,4 @@
-const CACHE = 'tawfeery-v2';
+const CACHE = 'tawfeery-v3';
 const urlsToCache = [
   '/',
   '/static/style.css',

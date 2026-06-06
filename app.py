@@ -15,6 +15,17 @@ import secrets
 
 app = Flask(__name__)
 
+_nahdi_scraper = None
+_nahdi_scraper_lock = threading.Lock()
+
+def get_nahdi_scraper():
+    global _nahdi_scraper
+    if _nahdi_scraper is None:
+        with _nahdi_scraper_lock:
+            if _nahdi_scraper is None:
+                _nahdi_scraper = cloudscraper.create_scraper()
+    return _nahdi_scraper
+
 # ── Security: CSP & Headers ──────────────────────────────────────────────────
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', '')
 
@@ -55,7 +66,10 @@ def check_rate(ip, endpoint, limit, window=60):
     return True
 
 def client_ip():
-    return request.headers.get('X-Forwarded-For', request.remote_addr or '127.0.0.1').split(',')[0].strip()
+    raw = request.headers.get('X-Forwarded-For', '').split(',')[0].strip()
+    if raw and re.match(r'^\d{1,3}(\.\d{1,3}){3}$', raw):
+        return raw
+    return request.remote_addr or '127.0.0.1'
 
 
 # ── Quantity Extraction & Unit Price Normalization ───────────────────────────
@@ -89,8 +103,7 @@ def extract_quantity(name):
 
     # Skip if it's a size pattern (مقاس 3, Size 3, مقاس كبير, etc.)
     if re.search(r'(مقاس|size|large|medium|small|كبير|وسط|صغير)', text, re.I):
-        # Still try to extract if there's a clear count AND size mention
-        pass
+        return None
 
     for pat in patterns:
         m = re.search(pat, text, re.I)
@@ -117,8 +130,7 @@ def enrich_item(item, raw_hit=None):
         raw_qty = raw_hit.get('quantity') if isinstance(raw_hit, dict) else None
         if raw_qty:
             # "24 حبة" -> 24  or  "30 حفاض" -> 30
-            import re as _re
-            m = _re.search(r'(\d+)', str(raw_qty))
+            m = re.search(r'(\d+)', str(raw_qty))
             if m:
                 qty = int(m.group(1))
     if not qty:
@@ -209,7 +221,7 @@ def scrape_nahdi(query):
     """
     results = []
     try:
-        scraper = cloudscraper.create_scraper()
+        scraper = get_nahdi_scraper()
         url = f"https://www.nahdionline.com/ar-sa/search?query={urllib.parse.quote(query)}"
         res = scraper.get(url, timeout=20)
         if res.status_code != 200:
@@ -540,7 +552,7 @@ def search():
         headers={
             'Cache-Control': 'no-cache',
             'X-Accel-Buffering': 'no',
-            'Access-Control-Allow-Origin': '*'
+            'Access-Control-Allow-Origin': request.headers.get('Origin', '*')
         }
     )
 
@@ -575,9 +587,8 @@ def deals():
 
 def _refresh_deals():
     with _deals_refreshing_lock:
-        # Check if another thread already refreshed
-        data, _ = cache.get_deals_cache(max_age=3600)
-        if data and time.time() - cache.get_deals_cache(max_age=3600)[1] < 120:
+        data, ts = cache.get_deals_cache(max_age=3600)
+        if data and time.time() - ts < 120:
             return
         try:
             seen_links = set()
@@ -609,7 +620,7 @@ def _refresh_deals():
                     if item.get('offer') and store_key not in seen_keys:
                         seen_keys.add(store_key)
                         offer_items.append(item)
-                offer_items.sort(key=lambda i: i.get('unit_price') or i['price'])
+                offer_items.sort(key=lambda i: (i.get('unit_price') if i.get('unit_price') is not None else 999999))
                 return offer_items[:300]
 
             all_items = []
@@ -650,18 +661,19 @@ def ping():
 # ── Admin / Analytics Dashboard ───────────────────────────────────────────────
 
 def check_admin_auth():
-    if ADMIN_PASSWORD:
-        auth = request.headers.get('Authorization')
-        if not auth or not auth.startswith('Basic '):
+    if not ADMIN_PASSWORD:
+        return False
+    auth = request.headers.get('Authorization')
+    if not auth or not auth.startswith('Basic '):
+        return False
+    try:
+        import base64
+        decoded = base64.b64decode(auth[6:]).decode('utf-8')
+        user, pw = decoded.split(':', 1)
+        if not secrets.compare_digest(pw, ADMIN_PASSWORD):
             return False
-        try:
-            import base64
-            decoded = base64.b64decode(auth[6:]).decode('utf-8')
-            user, pw = decoded.split(':', 1)
-            if pw != ADMIN_PASSWORD:
-                return False
-        except Exception:
-            return False
+    except Exception:
+        return False
     return True
 
 def admin_unauthorized():
@@ -674,11 +686,12 @@ def admin_dashboard():
     stats = cache.get_analytics_summary()
     # Mask IPs for privacy
     if 'recent_searches' in stats:
+        for s in stats['recent_searches']:
+            s['ip'] = mask_ip(s.get('ip', ''))
         stats['recent_searches'] = stats['recent_searches'][:20]
     if 'recent_visits' in stats:
         for v in stats['recent_visits']:
-            ip = v.get('ip', '')
-            v['ip'] = mask_ip(ip)
+            v['ip'] = mask_ip(v.get('ip', ''))
         stats['recent_visits'] = stats['recent_visits'][:20]
     return render_template('admin.html', stats=stats)
 
@@ -688,25 +701,31 @@ def admin_stats_api():
         return admin_unauthorized()
     stats = cache.get_analytics_summary()
     if 'recent_searches' in stats:
+        for s in stats['recent_searches']:
+            s['ip'] = mask_ip(s.get('ip', ''))
         stats['recent_searches'] = stats['recent_searches'][:20]
     if 'recent_visits' in stats:
         for v in stats['recent_visits']:
-            ip = v.get('ip', '')
-            v['ip'] = mask_ip(ip)
+            v['ip'] = mask_ip(v.get('ip', ''))
         stats['recent_visits'] = stats['recent_visits'][:20]
     return Response(json.dumps(stats, ensure_ascii=False), mimetype='application/json')
 
 def mask_ip(ip):
+    if not ip:
+        return '*.*.*.*'
     parts = ip.split('.')
     if len(parts) == 4:
         return f'{parts[0]}.{parts[1]}.*.*'
-    return ip
+    if ':' in ip:
+        groups = ip.split(':')
+        if len(groups) > 2:
+            return ':'.join(groups[:2]) + ':****'
+    return '*.*.*.*'
 
 
 # Pre-warm deals cache on startup
 threading.Thread(target=_refresh_deals, daemon=True).start()
 
 if __name__ == '__main__':
-    import os
     port = int(os.environ.get('PORT', 5050))
     app.run(debug=False, host='0.0.0.0', port=port, threaded=True, use_reloader=False)

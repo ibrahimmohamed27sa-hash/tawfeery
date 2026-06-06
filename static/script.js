@@ -139,6 +139,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let sessionScrapedProducts = safeJsonParse(localStorage.getItem('tawfeery_scraped_cache'), []);
     let customEquivalents = safeJsonParse(localStorage.getItem('tawfeery_custom_equivalents'), {});
     let currentQuery  = '';
+    let modalSearchAbort = null;
 
     // Deals Section DOM
     const dealsSection  = document.getElementById('deals-section');
@@ -189,7 +190,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ── BEST DEALS LOGIC ─────────────────────────────────────────────────────
 
-    async function fetchDeals(retries = 60) {
+    async function fetchDeals(retries = 15) {
         // Use server-rendered deals if available
         const serverDealsEl = document.getElementById('deals-data');
         if (serverDealsEl) {
@@ -347,7 +348,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                     <div class="deal-actions-row">
                         <button class="deal-basket-btn ${inBasket ? 'in-basket' : ''}" data-action="basket" title="${inBasket ? 'إزالة من المقارنة' : 'إضافة للمقارنة'}">${inBasket ? '🛒✓' : '🛒'}</button>
-                        <a href="${item.link}" target="_blank" rel="noopener noreferrer" class="deal-buy-btn">عرض</a>
+                        <a href="${sanitizeUrl(item.link)}" target="_blank" rel="noopener noreferrer" class="deal-buy-btn">عرض</a>
                     </div>
                 </div>
             </div>
@@ -383,7 +384,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Quick Search Pills Click
     document.querySelectorAll('.quick-pill').forEach(pill => {
-        pill.addEventListener('click', () => {
+        pill.addEventListener('click', (e) => {
+            e.preventDefault();
             const query = pill.getAttribute('data-query');
             searchInput.value = query;
             performSearch(query);
@@ -456,6 +458,9 @@ document.addEventListener('DOMContentLoaded', () => {
                                 sessionScrapedProducts.push(item);
                             }
                         });
+                        if (sessionScrapedProducts.length > 500) {
+                            sessionScrapedProducts = sessionScrapedProducts.slice(-500);
+                        }
                         localStorage.setItem('tawfeery_scraped_cache', JSON.stringify(sessionScrapedProducts));
 
                         if (allResults.length === 0) {
@@ -523,8 +528,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const pill = document.createElement('button');
             pill.className = 'history-pill';
             pill.innerHTML = `
-                <span>${query}</span>
-                <span class="delete-history-item" data-query="${query}">&times;</span>
+                <span>${sanitize(query)}</span>
+                <span class="delete-history-item" data-query="${sanitize(query)}">&times;</span>
             `;
             
             // Search on click
@@ -724,7 +729,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const index = basket.findIndex(b => b.link === item.link);
         if (index === -1) {
             // Add with default quantity of 1
-            const basketItem = { ...item, quantity: 1 };
+            const basketItem = { ...item, basketQty: 1, quantity: item.quantity };
             basket.push(basketItem);
             if (btnElement) {
                 btnElement.style.background = 'rgba(16, 185, 129, 0.2)';
@@ -742,7 +747,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateBasketUI() {
-        basketCount.textContent = basket.reduce((acc, b) => acc + (b.quantity || 1), 0);
+        basketCount.textContent = basket.reduce((acc, b) => acc + (b.basketQty || 1), 0);
 
         if (basket.length === 0) {
             basketItemsList.innerHTML = `
@@ -765,7 +770,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const regularPrice = parseFloat(item.price);
             const promoPrice = getEffectiveUnitPrice(regularPrice, item.offer);
             const displayUnitPrice = (promoPrice !== null && promoPrice < regularPrice) ? promoPrice : regularPrice;
-            const q = item.quantity || 1;
+            const q = item.basketQty || 1;
 
             const storesToCompare = [
                 { name: 'صيدلية النهدي', key: 'Nahdi Online', class: 'nahdi', short: 'النهدي' },
@@ -805,7 +810,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <div class="basket-custom-equiv-row">
                             <span class="store-dot ${store.class}"></span>
                             <span style="font-size: 0.72rem; color: var(--text-muted);">${store.short}:</span>
-                            <span class="bound-equiv-name" title="${equiv.name}">${equiv.name} (${equiv.price.toFixed(2)} SAR${equivOfferBadge ? '' : ''})</span>
+                            <span class="bound-equiv-name" title="${sanitize(equiv.name)}">${sanitize(equiv.name)} (${equiv.price.toFixed(2)} SAR${equivOfferBadge ? '' : ''})</span>
                             ${equivOfferBadge}
                             ${isCustom ? `<button class="unbind-equiv-btn" data-basket-link="${item.link}" data-store="${store.key}" title="إلغاء الربط المخصص">&times;</button>` : ''}
                         </div>
@@ -823,8 +828,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     if (candidates.length > 0) {
                         const pillsHTML = candidates.map(c => `
-                            <button class="suggest-pill-btn" data-basket-link="${item.link}" data-store="${store.key}" data-equiv-link="${c.link}" title="${c.name}">
-                                ${c.name.substring(0, 15)}... (${c.price.toFixed(2)} SAR)
+                            <button class="suggest-pill-btn" data-basket-link="${item.link}" data-store="${store.key}" data-equiv-link="${c.link}" title="${sanitize(c.name)}">
+                                ${sanitize(c.name.substring(0, 15))}... (${c.price.toFixed(2)} SAR)
                             </button>
                         `).join('');
                         
@@ -850,7 +855,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             div.innerHTML = `
                 <div style="display: flex; gap: 0.8rem; align-items: center; width: 100%;">
-                    <img src="${sanitizeUrl(item.image) || 'https://via.placeholder.com/150'}" alt="${sanitize(item.name)}" class="basket-item-img" onerror="this.src='https://via.placeholder.com/150'">
+                    <img src="${sanitizeUrl(item.image) || ''}" alt="${sanitize(item.name)}" class="basket-item-img" onerror="this.style.display='none'">
                     <div class="basket-item-info">
                         <div class="basket-item-name">${sanitize(item.name)}</div>
                         <div class="basket-item-store">${sanitize(item.store)}</div>
@@ -873,14 +878,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Quantity adjust event listeners
             div.querySelector('.qty-plus').addEventListener('click', () => {
-                item.quantity = q + 1;
+                item.basketQty = q + 1;
                 localStorage.setItem('tawfeery_basket', JSON.stringify(basket));
                 updateBasketUI();
             });
 
             div.querySelector('.qty-minus').addEventListener('click', () => {
                 if (q > 1) {
-                    item.quantity = q - 1;
+                    item.basketQty = q - 1;
                     localStorage.setItem('tawfeery_basket', JSON.stringify(basket));
                     updateBasketUI();
                 }
@@ -958,7 +963,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let missingUnited = 0;
 
         basket.forEach((basketItem) => {
-            const q = basketItem.quantity || 1;
+            const q = basketItem.basketQty || 1;
 
             // ── Nahdi Online Equivalent
             if (storeMatches(basketItem.store, 'Nahdi Online')) {
@@ -1021,7 +1026,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        const totalItemsInBasket = basket.reduce((acc, b) => acc + (b.quantity || 1), 0);
+        const totalItemsInBasket = basket.reduce((acc, b) => acc + (b.basketQty || 1), 0);
 
         // Render Nahdi total
         if (missingNahdi > 0) {
@@ -1098,7 +1103,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Bundle: "اشتري 2 بقيمة 1" → Buy 2 for price of 1 (1+1 free)
-        if (o.includes('بقيمة 1') || (o.includes('2 بقيمة') && o.includes('1'))) {
+        if (o.includes('بقيمة 1') || (o.includes('2 بقيمة') && o.includes('بقيمة 1'))) {
             return { type: 'bundle', unitPrice: price / 2 };
         }
 
@@ -1112,7 +1117,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (m) return { type: 'bundle', unitPrice: (price + parseFloat(m[1])) / 2 };
 
         // Bundle: 1+1 free (or اشتري 2 بقيمة 1)
-        if (o.includes('1 + 1') || o.includes('1+1') || o.includes('بقيمة 1') || (o.includes('مجانا') && o.includes('1') && !o.includes('2')) || o.includes('حبة + حبة مجانا') || o.includes('حبة + حبة مجاناً')) {
+        if (o.includes('1 + 1') || o.includes('1+1') || o.includes('بقيمة 1') || (o.includes('مجانا') && (o.includes('حبة مجانا') || o.includes('حبه مجانا') || o.includes('مجاناً')) && o.includes('1') && !o.includes('2')) || o.includes('حبة + حبة مجانا') || o.includes('حبة + حبة مجاناً')) {
             return { type: 'bundle', unitPrice: price / 2 };
         }
 
@@ -1175,7 +1180,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const o = offer.toLowerCase();
 
             // Buy 2 for price of 1 (اشتري 2 بقيمة 1 = 1+1 free)
-            if (o.includes('بقيمة 1') || (o.includes('2 بقيمة') && o.includes('1'))) {
+            if (o.includes('بقيمة 1')) {
                 const pairs = Math.floor(quantity / 2);
                 const singles = quantity % 2;
                 return (pairs + singles) * price;
@@ -1201,7 +1206,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // 1+1 free (or "اشتري 2 بقيمة 1")
-            if (o.includes('1 + 1') || o.includes('1+1') || o.includes('بقيمة 1') || (o.includes('مجانا') && o.includes('1') && !o.includes('2')) || o.includes('حبة + حبة مجانا') || o.includes('حبة + حبة مجاناً')) {
+            if (o.includes('1 + 1') || o.includes('1+1') || o.includes('بقيمة 1') || (o.includes('مجانا') && (o.includes('حبة مجانا') || o.includes('حبه مجانا') || o.includes('مجاناً')) && o.includes('1') && !o.includes('2')) || o.includes('حبة + حبة مجانا') || o.includes('حبة + حبة مجاناً')) {
                 const pairs = Math.floor(quantity / 2);
                 const singles = quantity % 2;
                 return (pairs + singles) * price;
@@ -1245,7 +1250,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!name) return '';
         let cleaned = name.toLowerCase().replace(/ـ/g, '');
         cleaned = cleaned
-            .replace(/[أإآأ]/g, 'ا')
+            .replace(/[أإآ]/g, 'ا')
             .replace(/ة/g, 'ه')
             .replace(/ى/g, 'ي')
             .replace(/[،؛؟?–—:;!*&|"'\-_.,()\/\[\]+]/g, ' ')
@@ -1285,7 +1290,7 @@ document.addEventListener('DOMContentLoaded', () => {
             .replace(/\s+/g, ' ')
             .trim()
             .split(' ')
-            .filter(t => t.length > 1 && !['for', 'the', 'and', 'with', 'by', 'in', 'of', 'to', 'plus', 'all'].includes(t));
+            .filter(t => t.length > 1 && !['for', 'the', 'and', 'with', 'by', 'in', 'of', 'to', 'plus', 'all', 'tablet', 'tablets', 'capsule', 'capsules', 'tab', 'caps', 'mg', 'ml', 'no', 'is', 'from'].includes(t));
     }
 
     // Extract Latin/English words from Arabic names (brands like "Panadol", "Centrum")
@@ -1558,6 +1563,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // ── PRODUCT DETAILS MODAL ────────────────────────────────────────────────
 
     function openModal(item) {
+        if (modalSearchAbort) { modalSearchAbort.abort(); modalSearchAbort = null; }
         modalProductImg.src = item.image || '';
         modalProductImg.onerror = () => {
             modalProductImg.src = 'https://via.placeholder.com/200?text=No+Image';
@@ -1647,7 +1653,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     div.innerHTML = `
                         <span class="eq-store-name"><span class="store-badge ${config.class}">${config.name}</span></span>
                         <span class="eq-price">${displayPrice.toFixed(2)} SAR ${priceNote}</span>
-                        <a href="${equiv.link}" target="_blank" rel="noopener noreferrer" class="eq-link">عرض 🔗</a>
+                        <a href="${sanitizeUrl(equiv.link)}" target="_blank" rel="noopener noreferrer" class="eq-link">عرض 🔗</a>
                     `;
                 } else {
                     div.innerHTML = `
@@ -1682,6 +1688,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
                 // Silent fetch search results — try multiple keywords
                 (async () => {
+                    const ac = new AbortController();
+                    modalSearchAbort = ac;
                     const searchQueries = [];
                     // English name FIRST — more standardized across stores
                     const itemEnTokens = getEnTokens(item.name_en);
@@ -1752,10 +1760,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         const stillMissing = storeConfigs.some(c => c.key !== item.store && !storeResults[c.key]);
                         if (!stillMissing) break;
                         try {
-                            const controller = new AbortController();
-                            const timeoutId = setTimeout(() => controller.abort(), 25000);
-                            const resp = await fetch(`/api/search?q=${encodeURIComponent(q)}`, { signal: controller.signal });
-                            clearTimeout(timeoutId);
+                            const resp = await fetch(`/api/search?q=${encodeURIComponent(q)}`, { signal: ac.signal });
                             if (!resp.ok) continue;
                             const reader = resp.body.getReader();
                             const decoder = new TextDecoder();
@@ -1802,6 +1807,12 @@ document.addEventListener('DOMContentLoaded', () => {
     productModal.addEventListener('click', (e) => {
         if (e.target === productModal) closeModal();
     });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            if (checkoutModal.classList.contains('open')) closeCheckoutModal();
+            else if (productModal.classList.contains('open')) closeModal();
+        }
+    });
 
     // ── CHECKOUT MODAL LOGIC ────────────────────────────────────────────────
     function openCheckoutModal(storeName) {
@@ -1813,7 +1824,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         basket.forEach(basketItem => {
             let equiv = null;
-            const q = basketItem.quantity || 1;
+            const q = basketItem.basketQty || 1;
 
             if (storeMatches(basketItem.store, storeName)) {
                 equiv = basketItem;
@@ -1837,10 +1848,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 row.innerHTML = `
                     <div class="checkout-item-info">
-                        <div class="checkout-item-title" title="${equiv.name}">${equiv.name}</div>
+                        <div class="checkout-item-title" title="${sanitize(equiv.name)}">${sanitize(equiv.name)}</div>
                         <div class="checkout-item-price">${q} × ${displayPrice.toFixed(2)} SAR = ${totalCost.toFixed(2)} SAR</div>
                     </div>
-                    <a href="${equiv.link}" target="_blank" rel="noopener noreferrer" class="checkout-item-link-btn">
+                    <a href="${sanitizeUrl(equiv.link)}" target="_blank" rel="noopener noreferrer" class="checkout-item-link-btn">
                         شراء المنتج 🔗
                     </a>
                 `;
