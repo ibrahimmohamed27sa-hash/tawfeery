@@ -459,7 +459,14 @@ document.addEventListener('DOMContentLoaded', () => {
                             }
                         });
                         if (sessionScrapedProducts.length > 500) {
-                            sessionScrapedProducts = sessionScrapedProducts.slice(-500);
+                            // Pin items that are in the basket or favorites
+                            const pinnedLinks = new Set([
+                                ...basket.map(b => b.link),
+                                ...favorites.map(f => f.link)
+                            ]);
+                            const pinned = sessionScrapedProducts.filter(p => pinnedLinks.has(p.link));
+                            const unpinned = sessionScrapedProducts.filter(p => !pinnedLinks.has(p.link));
+                            sessionScrapedProducts = [...pinned, ...unpinned.slice(-(500 - pinned.length))];
                         }
                         localStorage.setItem('tawfeery_scraped_cache', JSON.stringify(sessionScrapedProducts));
 
@@ -1055,10 +1062,20 @@ document.addEventListener('DOMContentLoaded', () => {
         const scoreUnited = { total: unitedTotal, missing: missingUnited, name: 'المتحدة' };
 
         const candidates = [scoreNahdi, scoreDawaa, scoreUnited];
-        // Sort primarily by fewest missing items, then by lowest total cost
+        // Calculate average item price to estimate cost of missing items
+        const availableCandidates = candidates.filter(c => c.missing < totalItemsInBasket);
+        const avgPrice = availableCandidates.length > 0
+            ? availableCandidates.reduce((s, c) => s + c.total, 0) / availableCandidates.reduce((s, c) => s + (totalItemsInBasket - c.missing), 0)
+            : 0;
+        // Weighted sort: penalize missing items by estimated replacement cost
         candidates.sort((a, b) => {
-            if (a.missing !== b.missing) return a.missing - b.missing;
-            return a.total - b.total;
+            const penaltyA = a.missing * avgPrice;
+            const penaltyB = b.missing * avgPrice;
+            const effectiveA = a.total + penaltyA;
+            const effectiveB = b.total + penaltyB;
+            if (a.missing === totalItemsInBasket && b.missing < totalItemsInBasket) return 1;
+            if (b.missing === totalItemsInBasket && a.missing < totalItemsInBasket) return -1;
+            return effectiveA - effectiveB;
         });
 
         const winner = candidates[0];
@@ -1077,7 +1094,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             let bannerHTML = `🎉 <strong>${winner.name}</strong> هي الأوفر لك بإجمالي <strong>${winner.total.toFixed(2)} ريال</strong>`;
             if (winner.missing > 0) {
-                bannerHTML += ` <span style="font-size:0.75rem; opacity:0.8;">(مع نقص ${winner.missing} حبة غير متوفرة)</span>`;
+                bannerHTML += ` <span style="font-size:0.75rem; opacity:0.8;">(مع نقص ${winner.missing} منتج غير متوفرة)</span>`;
             }
             basketWinnerBanner.innerHTML = bannerHTML;
         }
@@ -1246,6 +1263,36 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ── FUZZY STRING MATCHING ENGINE ─────────────────────────────────────────
 
+    // Transliteration dictionary: Arabic ↔ English for cross-language matching
+    const TRANSLIT_MAP = {
+        'بنادول': 'panadol', 'panadol': 'بنادول',
+        'سنترم': 'centrum', 'centrum': 'سنترم',
+        'بروفين': 'brufen', 'brufen': 'بروفين',
+        'فيفادول': 'fevadol', 'fevadol': 'فيفادول',
+        'سولبادين': 'solpadeine', 'solpadeine': 'سولبادين',
+        'كلاريتين': 'claritin', 'claritin': 'كلاريتين',
+        'جافيسكون': 'gaviscon', 'gaviscon': 'جافيسكون',
+        'فولتارين': 'voltaren', 'voltaren': 'فولتارين',
+        'ادفيل': 'advil', 'advil': 'ادفيل',
+        'نوفارين': 'nurofen', 'nurofen': 'نوفارين',
+        'ريلين': 'ralin', 'زيتون': 'zaitun',
+        'ميتفورمين': 'metformin', 'metformin': 'ميتفورمين',
+        'سيتريزين': 'cetirizine', 'cetirizine': 'سيتريزين',
+        'لوراتادين': 'loratadine', 'loratadine': 'لوراتادين',
+        'امبولا': 'ambroxol', 'ambroxol': 'امبولا',
+        'امبيسيلين': 'ampicillin', 'ampicillin': 'امبيسيلين',
+        'كلاريثروميسين': 'clarithromycin', 'clarithromycin': 'كلاريثروميسين',
+    };
+
+    // Variant keywords that differentiate products (must match exactly)
+    const VARIANT_KEYWORDS = new Set([
+        'extra', 'اكسترا', 'forte', 'فورته', 'plus', 'بلس', 'pro', 'برو',
+        'sr', 'xr', 'xl', 'max', 'ماكس', 'gold', 'جولد', 'silver', 'سلفر',
+        'ultra', 'التر', 'lite', 'لايت', 'baby', 'بيبي', 'kids', 'اطفال',
+        'men', 'رجال', 'women', 'نساء', 'senior', 'كبار',
+        'regular', 'عادي', 'intensive', 'مكثف',
+    ]);
+
     function cleanName(name) {
         if (!name) return '';
         let cleaned = name.toLowerCase().replace(/ـ/g, '');
@@ -1305,17 +1352,28 @@ document.addEventListener('DOMContentLoaded', () => {
         return storeName === storeKey;
     }
 
-    // Character-level Jaccard similarity for fuzzy brand matching
+    // Levenshtein edit distance for fuzzy brand matching
     function brandSimilarity(a, b) {
         if (!a || !b) return 0;
-        const setA = new Set(a);
-        const setB = new Set(b);
-        let intersection = 0;
-        for (const ch of setA) {
-            if (setB.has(ch)) intersection++;
+        if (a === b) return 1;
+        const lenA = a.length, lenB = b.length;
+        if (lenA === 0 || lenB === 0) return 0;
+        // For short strings, use simple edit distance ratio
+        const matrix = Array.from({length: lenA + 1}, () => Array(lenB + 1).fill(0));
+        for (let i = 0; i <= lenA; i++) matrix[i][0] = i;
+        for (let j = 0; j <= lenB; j++) matrix[0][j] = j;
+        for (let i = 1; i <= lenA; i++) {
+            for (let j = 1; j <= lenB; j++) {
+                const cost = a[i-1] === b[j-1] ? 0 : 1;
+                matrix[i][j] = Math.min(
+                    matrix[i-1][j] + 1,
+                    matrix[i][j-1] + 1,
+                    matrix[i-1][j-1] + cost
+                );
+            }
         }
-        const union = new Set([...setA, ...setB]).size;
-        return union > 0 ? intersection / union : 0;
+        const maxLen = Math.max(lenA, lenB);
+        return 1 - matrix[lenA][lenB] / maxLen;
     }
 
     function tokenScore(tokensA, tokensB) {
@@ -1329,7 +1387,23 @@ document.addEventListener('DOMContentLoaded', () => {
         const jaccard = unionSize > 0 ? intersection / unionSize : 0;
         const minLen = Math.min(tokensA.length, tokensB.length);
         const overlap = minLen > 0 ? intersection / minLen : 0;
-        return (jaccard * 0.35) + (overlap * 0.65);
+        let score = (jaccard * 0.35) + (overlap * 0.65);
+        // Penalty: if one name is a strict subset of the other (missing variant keyword)
+        const setA = new Set(tokensA);
+        const setB = new Set(tokensB);
+        const aIsSubset = tokensA.every(t => setB.has(t));
+        const bIsSubset = tokensB.every(t => setA.has(t));
+        if (aIsSubset || bIsSubset) {
+            // Check if the extra tokens are variant keywords
+            const larger = aIsSubset ? tokensB : tokensA;
+            const smaller = aIsSubset ? tokensA : tokensB;
+            const extraTokens = larger.filter(t => !smaller.includes(t));
+            const hasVariant = extraTokens.some(t => VARIANT_KEYWORDS.has(t));
+            if (hasVariant) {
+                score *= 0.5; // Strong penalty: "Panadol" ≠ "Panadol Extra"
+            }
+        }
+        return score;
     }
 
     function normalizeSize(val) {
@@ -1469,10 +1543,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const candidateWeight = extractWeightVolume(candidate.name, candidate.name_en);
             if (itemWeight !== null && candidateWeight !== null && itemWeight !== candidateWeight) continue;
 
-            // Quantity/pack count check: 90 حفاض ≠ 108 حفاض → hard reject
-            // This is strict because quantity extraction from unit words (حبة, حفاض, Tablets)
-            // is reliable after Bug 3 fix (dosage units removed from extraction).
-            if (itemQty > 0 && candidateQty > 0 && itemQty !== candidateQty) continue;
+            // Quantity/pack count check: flag mismatch instead of hard-reject
+            // Different pack sizes are allowed but penalized in scoring
+            const qtyMismatch = (itemQty > 0 && candidateQty > 0 && itemQty !== candidateQty);
 
             // ── SCORING ──
 
@@ -1481,6 +1554,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (itemQty > 0 && candidateQty > 0 && itemQty === candidateQty) {
                 qtyBonus = 0.1;
             }
+            // Quantity mismatch penalty (different pack sizes)
+            const qtyPenalty = qtyMismatch ? -0.2 : 0;
 
             // Size bonus when both have matching size
             let sizeBonus = 0;
@@ -1498,6 +1573,17 @@ document.addEventListener('DOMContentLoaded', () => {
             let arScore = 0;
             if (itemTokens.length > 0 && candidateTokens.length > 0) {
                 arScore = tokenScore(itemTokens, candidateTokens);
+            }
+
+            // --- Cross-language matching via transliteration ---
+            let crossScore = 0;
+            if ((itemEnTokens.length > 0 && candidateTokens.length > 0 && arScore === 0) ||
+                (itemTokens.length > 0 && candidateEnTokens.length > 0 && enScore === 0)) {
+                // Transliterate Arabic tokens to English for comparison
+                const itemTranslit = itemTokens.map(t => TRANSLIT_MAP[t] || t);
+                const candTranslit = candidateTokens.map(t => TRANSLIT_MAP[t] || t);
+                crossScore = tokenScore(itemEnTokens.length > 0 ? itemEnTokens : itemTranslit,
+                                         candidateEnTokens.length > 0 ? candidateEnTokens : candTranslit);
             }
 
             // --- Compute brand/manufacturer bonus ---
@@ -1530,14 +1616,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            // Combined score: use best of en/ar + brand bonus + size/qty bonuses
-            const bestNameScore = Math.max(enScore, arScore);
+            // Combined score: use best of en/ar/cross + brand bonus + size/qty bonuses
+            const bestNameScore = Math.max(enScore, arScore, crossScore);
             // If both lang scores are present, also try combined
             let combinedScore = bestNameScore;
             if (enScore > 0 && arScore > 0) {
                 combinedScore = Math.max(combinedScore, (enScore + arScore) / 2);
             }
-            const finalScore = combinedScore + brandBonus + qtyBonus + sizeBonus;
+            const finalScore = combinedScore + brandBonus + qtyBonus + sizeBonus + qtyPenalty;
 
             if (finalScore > highestScore) {
                 // Pass 1: requires brand match + score >= 0.55 (raised from 0.45)
@@ -1549,7 +1635,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     bestMatch = candidate;
                 }
                 // Pass 2 (fallback, no brand): requires very strong token overlap
-                else if (!hasBrand && combinedScore >= 0.65 && itemQty > 0 && candidateQty > 0 && itemQty === candidateQty) {
+                else if (!hasBrand && combinedScore >= 0.75) {
                     highestScore = finalScore;
                     bestMatch = candidate;
                 }
@@ -1696,19 +1782,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (itemEnTokens.length > 0) {
                         // Full filtered English name (best query)
                         searchQueries.push(itemEnTokens.join(' '));
-                        // Also try raw English name with hyphens/underscores replaced by spaces
-                        if (item.name_en) {
-                            const rawClean = item.name_en.replace(/[/\-_,.()]+/g, ' ').replace(/\s+/g, ' ').trim();
-                            if (rawClean && rawClean !== itemEnTokens.join(' ')) {
-                                searchQueries.push(rawClean);
-                            }
-                        }
-                        if (itemEnTokens.length > 1) {
-                            searchQueries.push(itemEnTokens.slice(0, Math.min(3, itemEnTokens.length)).join(' '));
-                        }
-                        if (itemEnTokens.length > 2) {
-                            searchQueries.push(itemEnTokens.slice(0, 2).join(' '));
-                        }
                     }
                     // Also try Latin words extracted from Arabic name (e.g. "Centrum" from "سنترم")
                     const itemLatin = extractLatinTokens(item.name);
@@ -1727,35 +1800,13 @@ document.addEventListener('DOMContentLoaded', () => {
                         searchQueries.push(itemTokens.slice(0, 3).join(' '));
                     }
                     // Try brand + quantity
-                    if (itemQty > 0) {
+                    if (itemQty > 0 && brand) {
                         searchQueries.push(`${brand} ${itemQty}`);
                     }
-                    // Try with itemTokens that are not first (e.g. second token alone)
-                    if (itemTokens.length > 1 && itemTokens[1] !== brand) {
-                        searchQueries.push(itemTokens[1]);
-                    }
-                    // Try middle tokens as a fallback
-                    for (let i = 0; i < Math.min(itemTokens.length, 5); i++) {
-                        if (itemTokens[i].length > 3 && itemTokens[i] !== brand) {
-                            searchQueries.push(itemTokens[i]);
-                        }
-                    }
-                    // Try quantity + each keyword individually
-                    if (itemQty > 0) {
-                        for (const t of itemTokens) {
-                            if (t !== brand && t.length > 2) {
-                                searchQueries.push(`${itemQty} ${t}`);
-                            }
-                        }
-                    }
                     // Deduplicate
-                    const uniqueQueries = [...new Set(searchQueries)];
-
-                    // If very few queries, add a broad fallback
-                    if (uniqueQueries.length <= 3 && itemTokens.length > 0) {
-                        // Try all tokens joined (full name without stop words)
-                        uniqueQueries.push(itemTokens.join(' '));
-                    }
+                    const uniqueQueries = [...new Set(searchQueries)]
+                        .filter(q => !/^\d+$/.test(q.trim()) && q.trim().length > 1)
+                        .slice(0, 7);
                     for (const q of uniqueQueries) {
                         const stillMissing = storeConfigs.some(c => c.key !== item.store && !storeResults[c.key]);
                         if (!stillMissing) break;

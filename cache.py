@@ -154,7 +154,8 @@ def check_rate_limit(ip, endpoint, max_requests=30, window=60):
     conn = _get_conn()
     try:
         conn.execute(
-            'INSERT INTO rate_limits (ip, endpoint, count, window_start) VALUES (?, ?, 1, ?)',
+            'INSERT INTO rate_limits (ip, endpoint, count, window_start) VALUES (?, ?, 1, ?) '
+            'ON CONFLICT(ip, endpoint, window_start) DO UPDATE SET count = count + 1',
             (ip, endpoint, window_start)
         )
         conn.commit()
@@ -166,12 +167,6 @@ def check_rate_limit(ip, endpoint, max_requests=30, window=60):
         count = row[0] if row else 1
         if count > max_requests:
             return False
-        if count > 1:
-            conn.execute(
-                'UPDATE rate_limits SET count=? WHERE ip=? AND endpoint=? AND window_start=?',
-                (count, ip, endpoint, window_start)
-            )
-            conn.commit()
         conn.execute('DELETE FROM rate_limits WHERE window_start < ?', (window_start - 2 * window,))
         conn.commit()
         return True

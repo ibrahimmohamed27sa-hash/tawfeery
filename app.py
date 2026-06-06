@@ -55,7 +55,7 @@ def sanitize_query(q):
         return ''
     q = q.strip()[:100]  # max 100 chars
     # Allow Arabic/English letters, digits, spaces, common pharmacy terms
-    q = re.sub(r'[^\w\s\-أ-يإآةؤئىء]+', '', q)
+    q = re.sub(r'[^\w\s\+\-\أ-يإآةؤئىء]+', '', q)
     return q.strip()
 
 # Rate limiting: max 20 search requests per minute per IP, 10 deals fetches per minute
@@ -560,9 +560,12 @@ def search():
 # ── Best Deals / Featured Endpoint ────────────────────────────────────────────
 
 POPULAR_QUERIES = [
-    'Panadol', 'فيفادول', 'بروفين', 'سولبادين',
+    'Panadol', 'بنادول', 'بروفين', 'سولبادين',
     'كلاريتين', 'جافيسكون', 'حفاضات', 'سنتروم',
-    'اوميغا 3', 'عرض'
+    'اوميغا 3', 'فيتامين سي', 'فيتامين د', 'كالسيوم',
+    'فيفادول', 'ميتفورمين', 'ريني', 'كانستين',
+    'لا روشيه', 'سيتريزين', 'امبولا', 'زنك',
+    'حليب اطفال', 'كحة', 'دوف', 'نيورون',
 ]
 _deals_refreshing_lock = threading.Lock()
 
@@ -633,9 +636,9 @@ def _refresh_deals():
                             if item['link'] not in seen_links:
                                 seen_links.add(item['link'])
                                 all_items.append(item)
-                        cache.set_deals_cache(rebuild_cache(all_items))
                     except Exception:
                         continue
+            cache.set_deals_cache(rebuild_cache(all_items))
 
         except Exception as e:
             print(f"Deals refresh error: {e}")
