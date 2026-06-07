@@ -1275,13 +1275,12 @@ document.addEventListener('DOMContentLoaded', () => {
         'فولتارين': 'voltaren', 'voltaren': 'فولتارين',
         'ادفيل': 'advil', 'advil': 'ادفيل',
         'نوفارين': 'nurofen', 'nurofen': 'نوفارين',
-        'ريلين': 'ralin', 'زيتون': 'zaitun',
         'ميتفورمين': 'metformin', 'metformin': 'ميتفورمين',
         'سيتريزين': 'cetirizine', 'cetirizine': 'سيتريزين',
         'لوراتادين': 'loratadine', 'loratadine': 'لوراتادين',
         'امبولا': 'ambroxol', 'ambroxol': 'امبولا',
-        'امبيسيلين': 'ampicillin', 'ampicillin': 'امبيسيلين',
-        'كلاريثروميسين': 'clarithromycin', 'clarithromycin': 'كلاريثروميسين',
+        'اولويز': 'always', 'اوليز': 'always', 'always': 'اولويز',
+        'دياموند': 'diamond', 'diamond': 'دياموند',
     };
 
     // Variant keywords that differentiate products (must match exactly)
@@ -1291,6 +1290,10 @@ document.addEventListener('DOMContentLoaded', () => {
         'ultra', 'التر', 'lite', 'لايت', 'baby', 'بيبي', 'kids', 'اطفال',
         'men', 'رجال', 'women', 'نساء', 'senior', 'كبار',
         'regular', 'عادي', 'intensive', 'مكثف',
+        'diamond', 'دياموند', 'all in one', 'كل ان ون',
+        'كبير', 'كبيره', 'large', 'صغير', 'صغيره', 'small',
+        'رفيع', 'رفيعه', 'طويل', 'طويله', 'Slim', 'سميك',
+        'super', 'سوبر', 'natural', 'طبيعي',
     ]);
 
     function cleanName(name) {
@@ -1543,9 +1546,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const candidateWeight = extractWeightVolume(candidate.name, candidate.name_en);
             if (itemWeight !== null && candidateWeight !== null && itemWeight !== candidateWeight) continue;
 
-            // Quantity/pack count check: flag mismatch instead of hard-reject
-            // Different pack sizes are allowed but penalized in scoring
-            const qtyMismatch = (itemQty > 0 && candidateQty > 0 && itemQty !== candidateQty);
+            // Quantity/pack count check: hard reject different pack sizes
+            // Different pack sizes = different product (e.g. 8 diapers ≠ 14 diapers)
+            if (itemQty > 0 && candidateQty > 0 && itemQty !== candidateQty) continue;
 
             // ── SCORING ──
 
@@ -1554,8 +1557,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (itemQty > 0 && candidateQty > 0 && itemQty === candidateQty) {
                 qtyBonus = 0.1;
             }
-            // Quantity mismatch penalty (different pack sizes)
-            const qtyPenalty = qtyMismatch ? -0.2 : 0;
 
             // Size bonus when both have matching size
             let sizeBonus = 0;
@@ -1623,7 +1624,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (enScore > 0 && arScore > 0) {
                 combinedScore = Math.max(combinedScore, (enScore + arScore) / 2);
             }
-            const finalScore = combinedScore + brandBonus + qtyBonus + sizeBonus + qtyPenalty;
+            const finalScore = combinedScore + brandBonus + qtyBonus + sizeBonus;
 
             if (finalScore > highestScore) {
                 // Pass 1: requires brand match + score >= 0.55 (raised from 0.45)
@@ -1635,7 +1636,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     bestMatch = candidate;
                 }
                 // Pass 2 (fallback, no brand): requires very strong token overlap
-                else if (!hasBrand && combinedScore >= 0.75) {
+                else if (!hasBrand && combinedScore >= 0.65) {
                     highestScore = finalScore;
                     bestMatch = candidate;
                 }
