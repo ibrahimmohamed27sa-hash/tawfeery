@@ -426,7 +426,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
-            const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+            const searchController = new AbortController();
+            const searchTimeout = setTimeout(() => searchController.abort(), 60000);
+            const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`, { signal: searchController.signal });
+            clearTimeout(searchTimeout);
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let buffer = '';
@@ -515,9 +518,13 @@ document.addEventListener('DOMContentLoaded', () => {
             resultsGrid.innerHTML = '';
             resultsContainer.classList.add('hidden');
             dealsSection.style.display = '';
+            const isTimeout = error.name === 'AbortError';
+            const errorMsg = isTimeout
+                ? 'الخادم يستيقظ حالياً، يرجى المحاولة مرة أخرى خلال 30 ثانية.'
+                : 'عذراً، حدث خطأ أثناء الاتصال. يرجى المحاولة مرة أخرى.';
             errorState.innerHTML = `
                 <div class="error-icon">⚠️</div>
-                <p>عذراً، حدث خطأ أثناء الاتصال. يرجى المحاولة مرة أخرى.</p>
+                <p>${errorMsg}</p>
                 <button onclick="document.getElementById('search-form').dispatchEvent(new Event('submit'))" style="margin-top:1rem; padding:0.6rem 1.5rem; background:linear-gradient(135deg,#10b981,#059669); color:white; border:none; border-radius:20px; cursor:pointer; font-size:0.95rem; font-family:inherit;">إعادة المحاولة 🔄</button>
             `;
             errorState.classList.remove('hidden');
