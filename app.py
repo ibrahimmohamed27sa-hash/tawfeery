@@ -264,7 +264,28 @@ def scrape_nahdi(query):
                 hits = results_list[0].get('hits', [])
                 for h in hits[:50]:
                     name = h.get('name', '')
+                    name_en = ''
+                    if isinstance(h, dict):
+                        store_en = h.get('store_en')
+                        if isinstance(store_en, dict):
+                            name_en = store_en.get('name', '') or ''
                     price_val = h.get('price', 0)
+
+                    # Relevance filter: skip products whose name doesn't relate to the query
+                    q_lower = query.lower().strip()
+                    name_lower = (name + ' ' + name_en).lower()
+                    # Simple token overlap check
+                    q_tokens = set(re.findall(r'[\w\u0600-\u06FF]{2,}', q_lower))
+                    n_tokens = set(re.findall(r'[\w\u0600-\u06FF]{2,}', name_lower))
+                    if q_tokens and not q_tokens.intersection(n_tokens):
+                        # No overlap — likely irrelevant (e.g. dental packages for a drug query)
+                        cat = h.get('category', '') or h.get('category_name', '') or ''
+                        cat_lower = cat.lower() if isinstance(cat, str) else ''
+                        allowed_cats = ['pharmacy', 'medicine', 'health', 'vitamin', 'supplement',
+                                        'otc', 'skin care', 'baby', 'diaper', 'dental care',
+                                        'pain relief', 'cold', 'flu']
+                        if not any(kw in cat_lower for kw in allowed_cats):
+                            continue
                     if isinstance(price_val, dict):
                         sar = price_val.get('SAR', {})
                         price_val = sar.get('default', 0)

@@ -15,7 +15,7 @@ function sanitizeUrl(str) {
     return '';
 }
 
-const SW_CACHE = 'tawfeery-v4';
+const SW_CACHE = 'tawfeery-v5';
 document.addEventListener('DOMContentLoaded', () => {
     // PWA: Service Worker + Install Prompt
     let deferredPrompt = null;
@@ -140,6 +140,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let customEquivalents = safeJsonParse(localStorage.getItem('tawfeery_custom_equivalents'), {});
     let currentQuery  = '';
     let modalSearchAbort = null;
+    let coldStartTimer = null;
 
     // Deals Section DOM
     const dealsSection  = document.getElementById('deals-section');
@@ -404,6 +405,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function performSearch(query) {
         currentQuery = query;
+        // Cancel any cold-start auto-retry timer
+        if (coldStartTimer) { clearInterval(coldStartTimer); coldStartTimer = null; }
         // Save to History
         if (!searchHistory.includes(query)) {
             searchHistory.unshift(query);
@@ -441,17 +444,36 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (dealsLoading) dealsLoading.style.display = 'none';
                 const status = response.status;
                 const isWake = status === 502 || status === 503;
-                const errorMsg = isWake
-                    ? 'الخادم يستيقظ حالياً، يرجى المحاولة مرة أخرى خلال 30 ثانية.'
-                    : status === 429
+                const isRateLimit = status === 429;
+                if (isWake) {
+                    let countdown = 20;
+                    errorState.innerHTML = `
+                        <div class="error-icon">⏳</div>
+                        <p>الخادم يستيقظ حالياً... سيتم المحاولة تلقائياً خلال <strong id="cold-start-countdown">${countdown}</strong> ثانية</p>
+                    `;
+                    errorState.classList.remove('hidden');
+                    const countdownEl = document.getElementById('cold-start-countdown');
+                    coldStartTimer = setInterval(() => {
+                        countdown--;
+                        if (countdownEl) countdownEl.textContent = countdown;
+                        if (countdown <= 0) {
+                            clearInterval(coldStartTimer);
+                            coldStartTimer = null;
+                            errorState.classList.add('hidden');
+                            performSearch(query);
+                        }
+                    }, 1000);
+                } else {
+                    const errorMsg = isRateLimit
                         ? 'طلبات كثيرة جداً. انتظر دقيقة ثم حاول مرة أخرى.'
                         : 'عذراً، حدث خطأ أثناء الاتصال. يرجى المحاولة مرة أخرى.';
-                errorState.innerHTML = `
-                    <div class="error-icon">⚠️</div>
-                    <p>${errorMsg}</p>
-                    <button onclick="document.getElementById('search-form').dispatchEvent(new Event('submit'))" style="margin-top:1rem; padding:0.6rem 1.5rem; background:linear-gradient(135deg,#10b981,#059669); color:white; border:none; border-radius:20px; cursor:pointer; font-size:0.95rem; font-family:inherit;">إعادة المحاولة 🔄</button>
-                `;
-                errorState.classList.remove('hidden');
+                    errorState.innerHTML = `
+                        <div class="error-icon">⚠️</div>
+                        <p>${errorMsg}</p>
+                        <button onclick="document.getElementById('search-form').dispatchEvent(new Event('submit'))" style="margin-top:1rem; padding:0.6rem 1.5rem; background:linear-gradient(135deg,#10b981,#059669); color:white; border:none; border-radius:20px; cursor:pointer; font-size:0.95rem; font-family:inherit;">إعادة المحاولة 🔄</button>
+                    `;
+                    errorState.classList.remove('hidden');
+                }
                 return;
             }
             const reader = response.body.getReader();
@@ -544,15 +566,37 @@ document.addEventListener('DOMContentLoaded', () => {
             dealsSection.style.display = '';
             if (dealsLoading) dealsLoading.style.display = 'none';
             const isTimeout = error.name === 'AbortError';
-            const errorMsg = isTimeout
+            const isNetwork = error instanceof TypeError;
+            const isColdStart = isTimeout || isNetwork;
+            const errorMsg = isColdStart
                 ? 'الخادم يستيقظ حالياً، يرجى المحاولة مرة أخرى خلال 30 ثانية.'
                 : 'عذراً، حدث خطأ أثناء الاتصال. يرجى المحاولة مرة أخرى.';
-            errorState.innerHTML = `
-                <div class="error-icon">⚠️</div>
-                <p>${errorMsg}</p>
-                <button onclick="document.getElementById('search-form').dispatchEvent(new Event('submit'))" style="margin-top:1rem; padding:0.6rem 1.5rem; background:linear-gradient(135deg,#10b981,#059669); color:white; border:none; border-radius:20px; cursor:pointer; font-size:0.95rem; font-family:inherit;">إعادة المحاولة 🔄</button>
-            `;
-            errorState.classList.remove('hidden');
+            if (isColdStart) {
+                let countdown = 20;
+                errorState.innerHTML = `
+                    <div class="error-icon">⏳</div>
+                    <p>الخادم يستيقظ حالياً... سيتم المحاولة تلقائياً خلال <strong id="cold-start-countdown">${countdown}</strong> ثانية</p>
+                `;
+                errorState.classList.remove('hidden');
+                const countdownEl = document.getElementById('cold-start-countdown');
+                coldStartTimer = setInterval(() => {
+                    countdown--;
+                    if (countdownEl) countdownEl.textContent = countdown;
+                    if (countdown <= 0) {
+                        clearInterval(coldStartTimer);
+                        coldStartTimer = null;
+                        errorState.classList.add('hidden');
+                        performSearch(query);
+                    }
+                }, 1000);
+            } else {
+                errorState.innerHTML = `
+                    <div class="error-icon">⚠️</div>
+                    <p>${errorMsg}</p>
+                    <button onclick="document.getElementById('search-form').dispatchEvent(new Event('submit'))" style="margin-top:1rem; padding:0.6rem 1.5rem; background:linear-gradient(135deg,#10b981,#059669); color:white; border:none; border-radius:20px; cursor:pointer; font-size:0.95rem; font-family:inherit;">إعادة المحاولة 🔄</button>
+                `;
+                errorState.classList.remove('hidden');
+            }
         }
     }
 
