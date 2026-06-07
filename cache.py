@@ -170,8 +170,9 @@ def check_rate_limit(ip, endpoint, max_requests=30, window=60):
         conn.execute('DELETE FROM rate_limits WHERE window_start < ?', (window_start - 2 * window,))
         conn.commit()
         return True
-    except Exception:
-        return True
+    except Exception as e:
+        print(f"Rate limiter error: {e}")
+        return False
     finally:
         conn.close()
 
