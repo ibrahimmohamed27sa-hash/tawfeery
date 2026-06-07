@@ -15,7 +15,7 @@ function sanitizeUrl(str) {
     return '';
 }
 
-const SW_CACHE = 'tawfeery-v3';
+const SW_CACHE = 'tawfeery-v4';
 document.addEventListener('DOMContentLoaded', () => {
     // PWA: Service Worker + Install Prompt
     let deferredPrompt = null;
@@ -190,7 +190,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ── BEST DEALS LOGIC ─────────────────────────────────────────────────────
 
-    async function fetchDeals(retries = 15) {
+    async function fetchDeals(retries = 8) {
         // Use server-rendered deals if available
         const serverDealsEl = document.getElementById('deals-data');
         if (serverDealsEl) {
@@ -210,7 +210,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 const timeoutId = setTimeout(() => controller.abort(), 25000);
                 const res = await fetch('/api/deals', { signal: controller.signal });
                 clearTimeout(timeoutId);
-                if (!res.ok) { dealsLoading.textContent = ''; return; }
+                if (!res.ok) {
+                    dealsLoading.innerHTML = '<a href="#" onclick="event.preventDefault();location.reload()" style="color:#10b981;text-decoration:underline;">تعذر تحميل العروض — انقر للتحديث</a>';
+                    return;
+                }
                 dealsData = await res.json();
                 if (!dealsData || dealsData.length === 0) {
                     if (attempt < retries - 1) {
@@ -230,7 +233,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     dealsLoading.textContent = `جاري تحميل أفضل العروض... (محاولة ${attempt + 2})`;
                     await new Promise(r => setTimeout(r, 3000));
                 } else {
-                    dealsLoading.textContent = '';
+                    dealsLoading.innerHTML = '<a href="#" onclick="event.preventDefault();location.reload()" style="color:#10b981;text-decoration:underline;">تعذر تحميل العروض — انقر للتحديث</a>';
                 }
             }
         }
@@ -430,6 +433,27 @@ document.addEventListener('DOMContentLoaded', () => {
             const searchTimeout = setTimeout(() => searchController.abort(), 60000);
             const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`, { signal: searchController.signal });
             clearTimeout(searchTimeout);
+            if (!response.ok) {
+                loadingState.classList.add('hidden');
+                resultsGrid.innerHTML = '';
+                resultsContainer.classList.add('hidden');
+                dealsSection.style.display = '';
+                if (dealsLoading) dealsLoading.style.display = 'none';
+                const status = response.status;
+                const isWake = status === 502 || status === 503;
+                const errorMsg = isWake
+                    ? 'الخادم يستيقظ حالياً، يرجى المحاولة مرة أخرى خلال 30 ثانية.'
+                    : status === 429
+                        ? 'طلبات كثيرة جداً. انتظر دقيقة ثم حاول مرة أخرى.'
+                        : 'عذراً، حدث خطأ أثناء الاتصال. يرجى المحاولة مرة أخرى.';
+                errorState.innerHTML = `
+                    <div class="error-icon">⚠️</div>
+                    <p>${errorMsg}</p>
+                    <button onclick="document.getElementById('search-form').dispatchEvent(new Event('submit'))" style="margin-top:1rem; padding:0.6rem 1.5rem; background:linear-gradient(135deg,#10b981,#059669); color:white; border:none; border-radius:20px; cursor:pointer; font-size:0.95rem; font-family:inherit;">إعادة المحاولة 🔄</button>
+                `;
+                errorState.classList.remove('hidden');
+                return;
+            }
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let buffer = '';
@@ -518,6 +542,7 @@ document.addEventListener('DOMContentLoaded', () => {
             resultsGrid.innerHTML = '';
             resultsContainer.classList.add('hidden');
             dealsSection.style.display = '';
+            if (dealsLoading) dealsLoading.style.display = 'none';
             const isTimeout = error.name === 'AbortError';
             const errorMsg = isTimeout
                 ? 'الخادم يستيقظ حالياً، يرجى المحاولة مرة أخرى خلال 30 ثانية.'
