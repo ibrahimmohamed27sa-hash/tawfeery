@@ -215,142 +215,150 @@ def scrape_united(query):
 
 def scrape_nahdi(query):
     """
-    Nahdi embeds Algolia search results directly in the page HTML as:
-    window[Symbol.for("InstantSearchInitialResults")] = {...}
-    We extract and parse this JSON without needing a headless browser.
+    Nahdi uses Magento REST API at ecombe.nahdionline.com.
+    Their Algolia search SSR ignores queries, so we hit the Magento API directly.
+    Product names are in English, so Arabic queries get transliterated first.
     """
     results = []
-    try:
-        scraper = get_nahdi_scraper()
-        url = f"https://www.nahdionline.com/ar-sa/search?query={urllib.parse.quote(query)}"
-        res = scraper.get(url, timeout=20)
-        if res.status_code != 200:
-            print(f"Nahdi HTTP error: {res.status_code}")
-            return results
 
-        soup = BeautifulSoup(res.text, 'html.parser')
-        marker = 'window[Symbol.for("InstantSearchInitialResults")] = '
+    # Arabic-to-English transliteration for common pharmacy terms
+    translit = {
+        'بنادول': 'panadol', 'بروفين': 'brufen', 'سولبادين': 'solpadeine',
+        'كلاريتين': 'claritin', 'جافيسكون': 'gaviscon', 'سنتروم': 'centrum',
+        'فيفادول': 'vivadol', 'ميتفورمين': 'metformin', 'ريني': 'rennie',
+        'كانستين': 'canesten', 'لا روشيه': 'la roche', 'سيتريزين': 'cetirizine',
+        'امبولا': 'ampoule', 'زنك': 'zinc', 'فيتامين سي': 'vitamin c',
+        'فيتامين د': 'vitamin d', 'اوميغا 3': 'omega 3', 'كالسيوم': 'calcium',
+        'حفاضات': 'diapers', 'كحة': 'cough', 'دوف': 'dove', 'نيورون': 'neurone',
+        'بيبي جوي كلوت': 'baby joy culotte', 'بيبي جوي': 'baby joy',
+        'حفاضة': 'diaper', 'كلوت': 'culotte', 'شامبو': 'shampoo',
+        'مسكن': 'analgesic', 'مضاد': 'antibiotic', 'قطرة': 'drops',
+        'شراب': 'syrup', 'كبسولة': 'capsule', 'قرص': 'tablet',
+        'حبة': 'tablet', 'مرطب': 'moisturizer', 'واقي شمس': 'sunscreen',
+        'معقم': 'sanitizer', 'مناديل': 'wipes', 'شاش': 'gauze',
+        'لاصق': 'tape', 'ضمادة': 'bandage', 'قطن': 'cotton',
+        'مسواك': 'miswak', 'فرشاة': 'brush', 'معجون': 'paste',
+        'بيبي': 'baby', 'جوي': 'joy', 'كبوت': 'culotte', 'كوت': 'culotte',
+        'بنادول': 'panadol', 'فيتامين': 'vitamin', 'كالسيوم': 'calcium',
+        'حفاض': 'diaper', 'كبسول': 'capsule', 'أقراص': 'tablets',
+        'مقاس': 'size', 'كبير': 'large', 'صغير': 'small', 'وسط': 'medium',
+    }
 
-        for script in soup.find_all('script'):
-            if not script.string or marker not in script.string:
+    def transliterate_query(q):
+        q_lower = q.lower().strip()
+        # Normalize Arabic text (remove tashkeel, normalize alef, etc.)
+        q_norm = re.sub(r'[ًٌٍَُِّْ]', '', q_lower)  # Remove tashkeel
+        q_norm = q_norm.replace('إ', 'ا').replace('آ', 'ا').replace('أ', 'ا')  # Normalize alef
+        q_norm = q_norm.replace('ة', 'ه').replace('ى', 'ي')  # Normalize ta-marbuta and alef-maksura
+
+        # Try full phrase match first (normalized)
+        for ar, en in translit.items():
+            ar_norm = re.sub(r'[ًٌٍَُِّْ]', '', ar.lower())
+            ar_norm = ar_norm.replace('إ', 'ا').replace('آ', 'ا').replace('أ', 'ا')
+            ar_norm = ar_norm.replace('ة', 'ه').replace('ى', 'ي')
+            if q_norm == ar_norm:
+                return en
+
+        # Try word-by-word transliteration
+        words = q_norm.split()
+        en_words = []
+        for w in words:
+            found = False
+            for ar, en in translit.items():
+                ar_norm_w = re.sub(r'[ًٌٍَُِّْ]', '', ar.lower())
+                ar_norm_w = ar_norm_w.replace('إ', 'ا').replace('آ', 'ا').replace('أ', 'ا')
+                ar_norm_w = ar_norm_w.replace('ة', 'ه').replace('ى', 'ي')
+                if w == ar_norm_w:
+                    en_words.append(en)
+                    found = True
+                    break
+            if not found:
+                en_words.append(w)
+
+        result = ' '.join(en_words)
+        return result
+
+    # Build search queries: original + transliterated + individual terms
+    queries_to_try = [query]
+    en_query = transliterate_query(query)
+    if en_query.lower() != query.lower():
+        queries_to_try.append(en_query)
+    # Also try shorter sub-queries for multi-word queries (Magento LIKE is strict)
+    en_words = en_query.split()
+    if len(en_words) > 2:
+        for i in range(len(en_words)):
+            for j in range(i + 2, len(en_words) + 1):
+                sub = ' '.join(en_words[i:j])
+                if sub not in queries_to_try and len(sub) > 2:
+                    queries_to_try.append(sub)
+
+    scraper = get_nahdi_scraper()
+    seen_skus = set()
+
+    for q in queries_to_try:
+        try:
+            url = 'https://ecombe.nahdionline.com/rest/V1/products'
+            params = {
+                'searchCriteria[filterGroups][0][filters][0][field]': 'name',
+                'searchCriteria[filterGroups][0][filters][0][value]': f'%{q}%',
+                'searchCriteria[filterGroups][0][filters][0][conditionType]': 'like',
+                'searchCriteria[pageSize]': '30',
+            }
+            res = scraper.get(url, params=params, timeout=15, headers={'Accept': 'application/json'})
+            if res.status_code != 200:
                 continue
 
-            raw = script.string
-            idx = raw.find(marker)
-            if idx == -1:
-                continue
-
-            json_str = raw[idx + len(marker):]
-            # Find balanced braces to extract valid JSON
-            depth, end = 0, 0
-            for i, c in enumerate(json_str):
-                if c == '{':
-                    depth += 1
-                elif c == '}':
-                    depth -= 1
-                    if depth == 0:
-                        end = i + 1
-                        break
-            if not end:
-                continue
-
-            data = json.loads(json_str[:end])
-
-            # The key may vary — find whichever has hits
-            for key, val in data.items():
-                results_list = val.get('results', [])
-                if not results_list:
+            data = res.json()
+            for item in data.get('items', []):
+                sku = item.get('sku', '')
+                if sku in seen_skus:
                     continue
-                hits = results_list[0].get('hits', [])
-                for h in hits[:50]:
-                    name = h.get('name', '')
-                    name_en = ''
-                    if isinstance(h, dict):
-                        store_en = h.get('store_en')
-                        if isinstance(store_en, dict):
-                            name_en = store_en.get('name', '') or ''
-                    price_val = h.get('price', 0)
+                seen_skus.add(sku)
 
-                    # Relevance filter: skip products whose name doesn't relate to the query
-                    q_lower = query.lower().strip()
-                    name_lower = (name + ' ' + name_en).lower()
-                    # Simple token overlap check
-                    q_tokens = set(re.findall(r'[\w\u0600-\u06FF]{2,}', q_lower))
-                    n_tokens = set(re.findall(r'[\w\u0600-\u06FF]{2,}', name_lower))
-                    if q_tokens and not q_tokens.intersection(n_tokens):
-                        # No overlap — likely irrelevant (e.g. dental packages for a drug query)
-                        cat = h.get('category', '') or h.get('category_name', '') or ''
-                        cat_lower = cat.lower() if isinstance(cat, str) else ''
-                        allowed_cats = ['pharmacy', 'medicine', 'health', 'vitamin', 'supplement',
-                                        'otc', 'skin care', 'baby', 'diaper', 'dental care',
-                                        'pain relief', 'cold', 'flu']
-                        if not any(kw in cat_lower for kw in allowed_cats):
-                            continue
-                    if isinstance(price_val, dict):
-                        sar = price_val.get('SAR', {})
-                        price_val = sar.get('default', 0)
-                        # Check for active special price
-                        sp = sar.get('special_price')
-                        if sp and sar.get('special_from_date') and sar.get('special_to_date'):
-                            price_val = sp
-                    elif not isinstance(price_val, (int, float)):
-                        price_val = 0
-                    img_url = h.get('image_url') or h.get('thumbnail_url', '')
-                    link = h.get('url', '')
-                    sku = h.get('sku', '')
-                    # Nahdi product pages (/pdp/{sku}) return HTTP 500 for many products
-                    # (Next.js SSR bug on their end). Search URL is 100% reliable.
-                    search_q = urllib.parse.quote(name) if name else (sku or '')
-                    link = f"https://www.nahdionline.com/ar-sa/search?query={search_q}"
+                name = item.get('name', '')
+                price = float(item.get('price', 0))
+                if not name or price <= 0:
+                    continue
 
-                    if name and price_val:
-                        try:
-                            offer_text = ''
-                            # Detect offers from multiple fields
-                            if h.get('item_has_offer') == 'Yes' or h.get('isOfferApplicable') or h.get('promo_type'):
-                                promo = h.get('promo_type') or h.get('offer_text') or h.get('offerApplicableLabel', '')
-                                if promo:
-                                    if "Buy 2  For" in promo:
-                                        price = promo.replace("Buy 2  For", "").replace("SAR", "").strip()
-                                        offer_text = f"اشتري 2 بسعر {price} ريال"
-                                    elif "1 + 1 with 50 %" in promo:
-                                        offer_text = "خصم 50% على الحبة الثانية"
-                                    elif "2 + 1" in promo:
-                                        offer_text = "اشتري 2 واحصل على 1 مجاناً"
-                                    elif "1 + 1" in promo:
-                                        offer_text = "اشتري 1 واحصل على 1 مجاناً"
-                                    elif re.search(r'\d+', promo):
-                                        offer_text = promo
+                img_path = ''
+                qty = None
+                for attr in item.get('custom_attributes', []):
+                    code = attr.get('attribute_code', '')
+                    val = attr.get('value', '')
+                    if code == 'image':
+                        img_path = val
+                    elif code == 'quantity_and_unit_description':
+                        m = re.search(r'(\d+)', val)
+                        if m:
+                            qty = int(m.group(1))
+                    elif code == 'size':
+                        m = re.search(r'(\d+)', str(val))
+                        if m:
+                            qty = int(m.group(1))
 
-                            sku = h.get('sku', '')
-                            name_en = ''
-                            manufacturer = ''
-                            gtin = ''
-                            if isinstance(h, dict):
-                                store_en = h.get('store_en')
-                                if isinstance(store_en, dict):
-                                    name_en = store_en.get('name', '') or ''
-                                manufacturer = h.get('manufacturer', '') or ''
-                                gtin = h.get('gtin', '') or ''
-                            item = {
-                                'store': 'Nahdi Online',
-                                'name': name,
-                                'price': float(price_val),
-                                'image': img_url,
-                                'link': link,
-                                'offer': offer_text,
-                                'sku': sku,
-                                'name_en': name_en,
-                                'manufacturer': manufacturer,
-                                'gtin': str(gtin) if gtin else '',
-                            }
-                            enrich_item(item, raw_hit=h)
-                            results.append(item)
-                        except Exception:
-                            pass
-            break  # Only process the first matching script
-    except Exception as e:
-        print(f"Nahdi error: {e}")
+                image_url = f"https://ecombe.nahdionline.com/media/catalog/product{img_path}" if img_path else ''
+                link = f"https://www.nahdionline.com/ar-sa/search?query={urllib.parse.quote(name)}"
+
+                item_result = {
+                    'store': 'Nahdi Online',
+                    'name': name,
+                    'price': price,
+                    'image': image_url,
+                    'link': link,
+                    'offer': '',
+                    'sku': sku,
+                    'name_en': name,
+                    'brand': '',
+                    'manufacturer': '',
+                    'gtin': '',
+                    'quantity': qty,
+                    'unit_price': round(price / qty, 4) if qty else None,
+                }
+                enrich_item(item_result)
+                results.append(item_result)
+        except Exception as e:
+            print(f"Nahdi Magento error [{q}]: {e}")
+
     return results
 
 
