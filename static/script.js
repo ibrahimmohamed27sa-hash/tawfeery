@@ -1045,6 +1045,9 @@ document.addEventListener('DOMContentLoaded', () => {
         let missingDawaa  = 0;
         let missingUnited = 0;
 
+        // Track missing items for auto-search
+        const missingItems = [];
+
         basket.forEach((basketItem) => {
             const q = basketItem.basketQty || 1;
 
@@ -1065,6 +1068,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     nahdiTotal += calculateDiscountedPrice(equiv.price, equiv.offer, q);
                 } else {
                     missingNahdi += q;
+                    missingItems.push({ store: 'Nahdi Online', item: basketItem, qty: q });
                 }
             }
 
@@ -1105,6 +1109,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     unitedTotal += calculateDiscountedPrice(equiv.price, equiv.offer, q);
                 } else {
                     missingUnited += q;
+                    missingItems.push({ store: 'United Pharmacy', item: basketItem, qty: q });
                 }
             }
         });
@@ -1174,6 +1179,69 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             basketWinnerBanner.innerHTML = bannerHTML;
         }
+
+        // Auto-search for missing products in background
+        if (missingItems.length > 0) {
+            searchMissingBasketItems(missingItems);
+        }
+    }
+
+    let basketSearchPending = 0;
+
+    function searchMissingBasketItems(missingItems) {
+        const toSearch = [];
+        const seen = new Set();
+        missingItems.forEach(({ store, item }) => {
+            const key = `${store}|${item.name}`;
+            if (seen.has(key)) return;
+            seen.add(key);
+            const query = item.name_en || item.name;
+            if (!query) return;
+            const alreadyHas = sessionScrapedProducts.some(p =>
+                storeMatches(p.store, store) &&
+                findEquivalent(item, [p]) !== null
+            );
+            if (!alreadyHas) {
+                toSearch.push({ store, query });
+            }
+        });
+
+        if (toSearch.length === 0) return;
+
+        basketSearchPending++;
+        toSearch.forEach(({ store, query }) => {
+            fetch(`/api/search?q=${encodeURIComponent(query)}`)
+                .then(response => {
+                    if (!response.ok) return null;
+                    return response.text();
+                })
+                .then(text => {
+                    if (!text) { basketSearchPending--; return; }
+                    const lines = text.split('\n\n');
+                    lines.forEach(line => {
+                        const d = line.replace(/^data: /, '').trim();
+                        if (!d || d === 'DONE') return;
+                        try {
+                            const parsed = JSON.parse(d);
+                            if (parsed.store && parsed.results) {
+                                parsed.results.forEach(p => {
+                                    if (storeMatches(p.store, store)) {
+                                        if (!sessionScrapedProducts.some(s => s.link === p.link)) {
+                                            sessionScrapedProducts.push(p);
+                                        }
+                                    }
+                                });
+                            }
+                        } catch (_) {}
+                    });
+                    basketSearchPending--;
+                    if (basketSearchPending <= 0) {
+                        localStorage.setItem('tawfeery_scraped_cache', JSON.stringify(sessionScrapedProducts));
+                        renderBasket();
+                    }
+                })
+                .catch(() => { basketSearchPending--; });
+        });
     }
 
 
